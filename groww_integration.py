@@ -6,6 +6,7 @@ Documentation: https://groww.in/trade-api/docs/python-sdk/portfolio
 """
 
 import os
+from pathlib import Path
 import requests
 from datetime import datetime
 from typing import Optional
@@ -13,7 +14,9 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from the project root directory
+PROJECT_ROOT = Path(__file__).parent
+load_dotenv(PROJECT_ROOT / ".env")
 
 # Groww API Configuration
 GROWW_API_TOKEN = os.getenv("GROWW_API_TOKEN")
