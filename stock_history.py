@@ -188,6 +188,48 @@ def clear_stale_cache():
     conn.close()
 
 
+def clear_all_cache():
+    """Clear entire stock cache. Use when data seems stale or corrupted."""
+    init_cache_db()
+
+    conn = sqlite3.connect(CACHE_DB)
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM stock_cache")
+
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_cache_stats() -> dict:
+    """Get cache statistics."""
+    init_cache_db()
+
+    conn = sqlite3.connect(CACHE_DB)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM stock_cache")
+    total = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM stock_cache WHERE expires_at > datetime('now')")
+    valid = cursor.fetchone()[0]
+
+    cursor.execute("SELECT MIN(fetched_at), MAX(fetched_at) FROM stock_cache")
+    row = cursor.fetchone()
+    oldest = row[0] if row else None
+    newest = row[1] if row else None
+
+    conn.close()
+
+    return {
+        "total_entries": total,
+        "valid_entries": valid,
+        "oldest_fetch": oldest,
+        "newest_fetch": newest,
+    }
+
+
 def fetch_stock_history(ticker: str, days: int = 30) -> pd.DataFrame:
     """
     Fetch historical price data for a stock.

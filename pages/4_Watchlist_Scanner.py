@@ -148,6 +148,14 @@ def main():
     # Send to Telegram option
     send_telegram = st.sidebar.checkbox("Send results to Telegram", value=False)
 
+    # Clear cache button - use this if data shows all zeros or errors
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🗑️ Clear Stock Cache", width="stretch"):
+        from stock_history import clear_all_cache
+        clear_all_cache()
+        st.cache_data.clear()
+        st.sidebar.success("Cache cleared! Run scan again.")
+
     # Main content area
     tab1, tab2, tab3 = st.tabs(["Scan Results", "Quick Scans", "Manage Watchlists"])
 

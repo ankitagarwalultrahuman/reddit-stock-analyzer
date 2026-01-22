@@ -346,6 +346,14 @@ def main():
     # Sidebar - Quick Actions
     st.sidebar.header("Quick Actions")
 
+    # Clear cache button - use this if data shows all zeros
+    if st.sidebar.button("🗑️ Clear Stock Cache", width="stretch"):
+        from stock_history import clear_all_cache
+        clear_all_cache()
+        st.cache_data.clear()
+        st.sidebar.success("Cache cleared! Click 'Refresh Data' to reload.")
+        st.rerun()
+
     if st.sidebar.button("Send to Telegram", width="stretch"):
         from telegram_alerts import send_sector_alert, is_telegram_configured
         if is_telegram_configured():
