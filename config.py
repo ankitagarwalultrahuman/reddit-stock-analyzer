@@ -1,12 +1,31 @@
 """Configuration settings for Reddit Stock Analyzer."""
 
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def get_secret(key: str, default: str = None) -> Optional[str]:
+    """
+    Get secret from either Streamlit Cloud secrets or environment variables.
+    Supports both local development (.env) and Streamlit Cloud deployment.
+    """
+    # First try Streamlit secrets (for Streamlit Cloud deployment)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass  # Not running in Streamlit or secrets not available
+
+    # Fall back to environment variables (for local development)
+    return os.getenv(key, default)
+
+
 # Claude API Configuration
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
 # Reddit Configuration

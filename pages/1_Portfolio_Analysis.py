@@ -378,6 +378,20 @@ def main():
     with tab1:
         st.subheader("Equity Holdings vs Reddit Sentiment")
 
+        # Debug: Show configuration status
+        if not client.is_configured():
+            st.error("""
+            **Groww API credentials not found.**
+
+            For Streamlit Cloud, add secrets in your app settings:
+            ```
+            GROWW_API_TOKEN = "your_jwt_token"
+            GROWW_API_SECRET = "your_api_secret"
+            ```
+
+            For local development, add to `.env` file.
+            """)
+
         # Fetch holdings
         with st.spinner("Fetching portfolio from Groww..."):
             try:
@@ -413,8 +427,15 @@ def main():
                     st.info("No holdings found in your Groww account, or API connection failed.")
                     st.write("Try the manual entry option in the '⚙️ Manual Entry' tab.")
 
+            except ImportError as e:
+                st.error(f"Missing dependency: {e}")
+                st.write("The `growwapi` package may not be installed. Try: `pip install growwapi`")
+            except ValueError as e:
+                st.error(f"Configuration error: {e}")
+                st.write("Please check your Groww API credentials.")
             except Exception as e:
                 st.error(f"Error fetching portfolio: {e}")
+                st.write(f"Error type: `{type(e).__name__}`")
                 st.write("Try the manual entry option instead.")
 
     with tab2:

@@ -18,9 +18,27 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).parent
 load_dotenv(PROJECT_ROOT / ".env")
 
+
+def get_secret(key: str, default: str = None) -> Optional[str]:
+    """
+    Get secret from either Streamlit Cloud secrets or environment variables.
+    Supports both local development (.env) and Streamlit Cloud deployment.
+    """
+    # First try Streamlit secrets (for Streamlit Cloud deployment)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass  # Not running in Streamlit or secrets not available
+
+    # Fall back to environment variables (for local development)
+    return os.getenv(key, default)
+
+
 # Groww API Configuration
-GROWW_API_TOKEN = os.getenv("GROWW_API_TOKEN")
-GROWW_API_SECRET = os.getenv("GROWW_API_SECRET")
+GROWW_API_TOKEN = get_secret("GROWW_API_TOKEN")
+GROWW_API_SECRET = get_secret("GROWW_API_SECRET")
 GROWW_BASE_URL = "https://api.groww.in"
 
 
