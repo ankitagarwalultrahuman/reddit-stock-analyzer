@@ -57,12 +57,17 @@ jobs:
           fi
           echo "Determined session: $(cat $GITHUB_OUTPUT | grep session)"
 
+      - name: Ensure output directory exists
+        run: mkdir -p output
+
       - name: Run Reddit Stock Analyzer
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           # The main.py script handles 'next' session detection and auto-generates comparison for PM
+          set -e  # Exit on error
           python main.py --session ${{ steps.session.outputs.session }}
+          echo "Script completed successfully"
 
       - name: List generated files
         run: |
