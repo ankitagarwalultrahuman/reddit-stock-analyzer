@@ -1,13 +1,13 @@
 
 ================================================================================
                     INDIAN STOCK MARKET DAILY DIGEST
-                    Generated: 2026-01-22 11:12:46
+                    Generated: 2026-01-22 18:00:00 (PM Session)
 ================================================================================
 
 Data Sources: r/IndianStreetBets, r/IndianStockMarket, r/DalalStreetTalks, r/IndiaInvestments
 Time Window: Last 48 hours
-Total Posts Analyzed: 42
-Total Comments Analyzed: 244
+Total Posts Analyzed: 58
+Total Comments Analyzed: 312
 
 ================================================================================
 # REDDIT INDIAN STOCK MARKET SENTIMENT ANALYSIS

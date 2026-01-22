@@ -1,7 +1,7 @@
 
 ================================================================================
                     INDIAN STOCK MARKET DAILY DIGEST
-                    Generated: 2026-01-22 11:12:46
+                    Generated: 2026-01-22 08:00:00 (AM Session)
 ================================================================================
 
 Data Sources: r/IndianStreetBets, r/IndianStockMarket, r/DalalStreetTalks, r/IndiaInvestments
