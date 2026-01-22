@@ -1,0 +1,102 @@
+{
+  "date": "2026-01-22",
+  "summary": {
+    "total_new_stocks": 5,
+    "total_removed_stocks": 5,
+    "total_sentiment_changes": 4,
+    "total_volume_changes": 1
+  },
+  "new_stocks_pm": [
+    {
+      "ticker": "NIFTY 50 ETF SYSTEMATIC BUYING",
+      "sentiment": "bullish",
+      "mentions": 69
+    },
+    {
+      "ticker": "DEEPINDER GOYAL RESIGNATION",
+      "sentiment": "neutral",
+      "mentions": 69
+    },
+    {
+      "ticker": "PANIC SELLING PATTERNS",
+      "sentiment": "neutral",
+      "mentions": 28
+    },
+    {
+      "ticker": "BROKER ISSUES (GROWW)",
+      "sentiment": "bearish",
+      "mentions": 10
+    },
+    {
+      "ticker": "RAILWAY STOCKS DECLINE",
+      "sentiment": "bearish",
+      "mentions": 8
+    }
+  ],
+  "removed_stocks_pm": [
+    {
+      "ticker": "DEEPINDER GOYAL/ZOMATO",
+      "sentiment": "neutral",
+      "mentions": 69
+    },
+    {
+      "ticker": "NIFTY 50 ETF",
+      "sentiment": "bullish",
+      "mentions": 35
+    },
+    {
+      "ticker": "PANIC SELLING BEHAVIOR",
+      "sentiment": "neutral",
+      "mentions": 32
+    },
+    {
+      "ticker": "GROWW PLATFORM ISSUES",
+      "sentiment": "neutral",
+      "mentions": 10
+    },
+    {
+      "ticker": "RAILWAY STOCKS (IRFC, RVNL)",
+      "sentiment": "mixed",
+      "mentions": 7
+    }
+  ],
+  "sentiment_changes": [
+    {
+      "ticker": "GOLD ETFs",
+      "am_sentiment": "bearish",
+      "pm_sentiment": "neutral",
+      "change_direction": "improving"
+    },
+    {
+      "ticker": "HEALTHCARE SECTOR CONSOLIDATION",
+      "am_sentiment": "bearish",
+      "pm_sentiment": "mixed",
+      "change_direction": "improving"
+    },
+    {
+      "ticker": "SILVER ETFs",
+      "am_sentiment": "bearish",
+      "pm_sentiment": "mixed",
+      "change_direction": "improving"
+    },
+    {
+      "ticker": "TRUMP POLICY IMPACT",
+      "am_sentiment": "mixed",
+      "pm_sentiment": "bearish",
+      "change_direction": "declining"
+    }
+  ],
+  "volume_changes": [
+    {
+      "ticker": "SILVER ETFs",
+      "am_mentions": 101,
+      "pm_mentions": 77,
+      "change_percent": -23.8
+    }
+  ],
+  "market_mood_shift": {
+    "am_mood": "neutral",
+    "pm_mood": "bearish",
+    "shift_description": "Market turned cautious as the day progressed"
+  }
+}
