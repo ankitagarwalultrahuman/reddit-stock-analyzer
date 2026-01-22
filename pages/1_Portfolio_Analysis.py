@@ -448,7 +448,13 @@ def render_mf_analysis(report_content: str):
 
 def main():
     """Main portfolio analysis page."""
+    # Force initial render with placeholder
+    _ = st.empty()
+
     render_header()
+
+    # Another render checkpoint
+    _ = st.empty()
 
     # Check Groww API configuration
     client = GrowwClient()
@@ -479,10 +485,15 @@ def main():
 
     st.caption(f"📅 Using report from: {latest_date.strftime('%B %d, %Y')}")
 
+    # Render checkpoint before tabs
+    _ = st.empty()
+
     # Tabs for different views
     tab1, tab2, tab3 = st.tabs(["📊 Equity Holdings", "📈 Mutual Funds", "⚙️ Manual Entry"])
 
     with tab1:
+        # Render checkpoint
+        _ = st.empty()
         st.subheader("Equity Holdings vs Reddit Sentiment")
 
         if not client.is_configured():
@@ -504,6 +515,9 @@ def main():
                 holdings = client.get_holdings_with_prices()
 
                 if holdings:
+                    # Render checkpoint
+                    _ = st.empty()
+
                     # Get summary
                     summary = get_portfolio_summary(holdings)
                     render_portfolio_summary(summary)
@@ -514,6 +528,9 @@ def main():
                     analyzed = analyze_holdings_against_sentiment(holdings, report_content)
 
                     if analyzed:
+                        # Render checkpoint
+                        _ = st.empty()
+
                         # Layout
                         col1, col2 = st.columns([3, 1])
 
@@ -545,9 +562,13 @@ def main():
                 st.write("Try the manual entry option instead.")
 
     with tab2:
+        # Render checkpoint
+        _ = st.empty()
         render_mf_analysis(report_content)
 
     with tab3:
+        # Render checkpoint
+        _ = st.empty()
         st.subheader("Manual Portfolio Entry")
 
         st.write("Add your holdings manually to analyze against Reddit sentiment.")
