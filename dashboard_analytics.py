@@ -769,3 +769,293 @@ def calculate_sentiment_distribution(insights: list[dict]) -> dict:
             distribution["neutral"] += 1
 
     return distribution
+
+
+# =============================================================================
+# CONFLUENCE SIGNAL ANALYSIS
+# =============================================================================
+
+def analyze_confluence_signals(stocks: list[dict], report_content: str = "") -> list[dict]:
+    """
+    Analyze stocks for confluence signals (sentiment + technicals alignment).
+
+    Args:
+        stocks: List of stock dicts from parse_stock_mentions()
+        report_content: Full report content for additional context
+
+    Returns:
+        List of stocks with confluence analysis
+    """
+    from stock_history import get_stock_with_technicals
+
+    confluence_results = []
+
+    for stock in stocks:
+        ticker = stock.get("ticker", "")
+        sentiment = stock.get("sentiment", "neutral")
+        mentions = stock.get("total_mentions", 0)
+
+        # Skip low-mention stocks
+        if mentions < 5:
+            continue
+
+        # Get technical data
+        stock_data = get_stock_with_technicals(ticker)
+
+        if not stock_data.get("success") or not stock_data.get("technicals"):
+            continue
+
+        technicals = stock_data["technicals"]
+
+        # Calculate confluence score
+        confluence_score, aligned_signals = calculate_confluence_score(
+            sentiment=sentiment,
+            technicals=technicals,
+            mentions=mentions
+        )
+
+        confluence_results.append({
+            "ticker": ticker,
+            "sentiment": sentiment,
+            "mentions": mentions,
+            "post_count": stock.get("post_count", 0),
+            "comment_count": stock.get("comment_count", 0),
+            "current_price": technicals.get("current_price"),
+            "rsi": technicals.get("rsi"),
+            "rsi_signal": technicals.get("rsi_signal"),
+            "macd_trend": technicals.get("macd_trend"),
+            "ma_trend": technicals.get("ma_trend"),
+            "technical_score": technicals.get("technical_score"),
+            "technical_bias": technicals.get("technical_bias"),
+            "volume_signal": technicals.get("volume_signal"),
+            "volatility_level": technicals.get("volatility_level"),
+            "confluence_score": confluence_score,
+            "aligned_signals": aligned_signals,
+            "signal_strength": get_signal_strength(confluence_score),
+        })
+
+    # Sort by confluence score descending
+    confluence_results.sort(key=lambda x: x["confluence_score"], reverse=True)
+
+    return confluence_results
+
+
+def calculate_confluence_score(sentiment: str, technicals: dict, mentions: int) -> tuple:
+    """
+    Calculate confluence score based on sentiment and technical alignment.
+
+    Scoring criteria (max 5 points for bullish, min -5 for bearish):
+
+    Bullish confluence:
+    1. Sentiment is bullish (+1)
+    2. RSI is oversold or near_oversold (+1)
+    3. MACD is bullish or bullish_crossover (+1)
+    4. MA trend is bullish (+1)
+    5. Volume is high (+1)
+
+    Bearish confluence (inverted):
+    1. Sentiment is bearish (-1)
+    2. RSI is overbought (-1)
+    3. MACD is bearish or bearish_crossover (-1)
+    4. MA trend is bearish (-1)
+    5. Volume is high (confirms bearish) (-1)
+
+    Args:
+        sentiment: Reddit sentiment
+        technicals: Technical analysis dict
+        mentions: Number of mentions
+
+    Returns:
+        Tuple of (confluence_score 0-5, list of aligned signals)
+    """
+    score = 0
+    aligned_signals = []
+
+    # Determine if we're looking for bullish or bearish confluence
+    is_bullish_sentiment = sentiment == "bullish"
+    is_bearish_sentiment = sentiment == "bearish"
+
+    # 1. Sentiment check
+    if is_bullish_sentiment:
+        score += 1
+        aligned_signals.append(f"Bullish sentiment ({mentions} mentions)")
+    elif is_bearish_sentiment:
+        aligned_signals.append(f"Bearish sentiment ({mentions} mentions)")
+
+    # 2. RSI check
+    rsi_signal = technicals.get("rsi_signal", "")
+    rsi_value = technicals.get("rsi")
+
+    if is_bullish_sentiment:
+        if rsi_signal in ("oversold", "near_oversold"):
+            score += 1
+            aligned_signals.append(f"RSI {rsi_value} ({rsi_signal})")
+    elif is_bearish_sentiment:
+        if rsi_signal in ("overbought", "near_overbought"):
+            score += 1
+            aligned_signals.append(f"RSI {rsi_value} ({rsi_signal})")
+
+    # 3. MACD check
+    macd_trend = technicals.get("macd_trend", "")
+
+    if is_bullish_sentiment:
+        if macd_trend in ("bullish", "bullish_crossover"):
+            score += 1
+            aligned_signals.append(f"MACD {macd_trend}")
+    elif is_bearish_sentiment:
+        if macd_trend in ("bearish", "bearish_crossover"):
+            score += 1
+            aligned_signals.append(f"MACD {macd_trend}")
+
+    # 4. MA Trend check
+    ma_trend = technicals.get("ma_trend", "")
+
+    if is_bullish_sentiment and ma_trend == "bullish":
+        score += 1
+        aligned_signals.append("MA trend bullish (20>50>200)")
+    elif is_bearish_sentiment and ma_trend == "bearish":
+        score += 1
+        aligned_signals.append("MA trend bearish (20<50<200)")
+
+    # 5. Volume check (confirms the move)
+    volume_signal = technicals.get("volume_signal", "")
+
+    if volume_signal == "high":
+        score += 1
+        volume_ratio = technicals.get("volume_ratio", 0)
+        aligned_signals.append(f"High volume ({volume_ratio}x avg)")
+
+    return score, aligned_signals
+
+
+def get_signal_strength(confluence_score: int) -> str:
+    """Convert confluence score to strength label."""
+    if confluence_score >= 4:
+        return "Strong"
+    elif confluence_score >= 3:
+        return "Moderate"
+    elif confluence_score >= 2:
+        return "Weak"
+    return "No Signal"
+
+
+def get_top_confluence_signals(report_content: str, limit: int = 5) -> list[dict]:
+    """
+    Get top confluence signals from a report.
+
+    Args:
+        report_content: Full report content
+        limit: Maximum number of signals to return
+
+    Returns:
+        List of top confluence signals
+    """
+    stocks = parse_stock_mentions(report_content)
+    insights = parse_key_insights_structured(report_content)
+
+    # Merge insights data into stocks
+    insights_by_ticker = {i["ticker"]: i for i in insights}
+    for stock in stocks:
+        ticker = stock["ticker"]
+        if ticker in insights_by_ticker:
+            stock["description"] = insights_by_ticker[ticker].get("description", "")
+            stock["key_points"] = insights_by_ticker[ticker].get("key_points", "")
+
+    confluence_results = analyze_confluence_signals(stocks, report_content)
+
+    # Filter to only signals with score >= 2
+    strong_signals = [s for s in confluence_results if s["confluence_score"] >= 2]
+
+    return strong_signals[:limit]
+
+
+def store_signals_from_report(report_content: str, report_date: str):
+    """
+    Extract and store signals from a report for tracking.
+
+    Args:
+        report_content: Full report content
+        report_date: Date of the report (YYYY-MM-DD)
+    """
+    from signal_tracker import store_signal, Signal
+    import json
+
+    stocks = parse_stock_mentions(report_content)
+    confluence_results = analyze_confluence_signals(stocks, report_content)
+
+    for result in confluence_results:
+        signal = Signal(
+            date=report_date,
+            ticker=result["ticker"],
+            sentiment=result["sentiment"],
+            mention_count=result["mentions"],
+            post_count=result.get("post_count", 0),
+            comment_count=result.get("comment_count", 0),
+            rsi=result.get("rsi"),
+            rsi_signal=result.get("rsi_signal"),
+            macd_trend=result.get("macd_trend"),
+            ma_trend=result.get("ma_trend"),
+            technical_score=result.get("technical_score"),
+            technical_bias=result.get("technical_bias"),
+            price_at_signal=result.get("current_price"),
+            confluence_score=result["confluence_score"],
+            confluence_signals=json.dumps(result["aligned_signals"]),
+        )
+
+        store_signal(signal)
+
+
+def update_signal_outcomes():
+    """
+    Update price outcomes for signals that need updating.
+    Should be called periodically (e.g., daily via cron).
+    """
+    from signal_tracker import get_signals_needing_price_update, update_price_outcomes
+    from stock_history import get_prices_for_outcomes
+
+    signals_to_update = get_signals_needing_price_update()
+
+    for signal in signals_to_update:
+        prices = get_prices_for_outcomes(signal["ticker"], signal["date"])
+        if prices:
+            update_price_outcomes(signal["ticker"], signal["date"], prices)
+
+
+def generate_confluence_summary(confluence_signals: list[dict]) -> str:
+    """
+    Generate a human-readable summary of confluence signals.
+
+    Args:
+        confluence_signals: List of confluence signal dicts
+
+    Returns:
+        Formatted summary string
+    """
+    if not confluence_signals:
+        return "No strong confluence signals detected today."
+
+    lines = ["## TODAY'S CONFLUENCE SIGNALS", ""]
+
+    strong = [s for s in confluence_signals if s["signal_strength"] == "Strong"]
+    moderate = [s for s in confluence_signals if s["signal_strength"] == "Moderate"]
+
+    if strong:
+        lines.append("### STRONG SIGNALS (4-5 aligned indicators)")
+        for s in strong:
+            stars = "\u2b50" * s["confluence_score"]
+            lines.append(f"\n**{s['ticker']}** {stars}")
+            lines.append(f"  Sentiment: {s['sentiment'].title()} ({s['mentions']} mentions)")
+            lines.append(f"  RSI: {s['rsi']} ({s['rsi_signal']})")
+            lines.append(f"  MACD: {s['macd_trend']}")
+            lines.append(f"  Technical Score: {s['technical_score']}/100")
+            lines.append(f"  Aligned: {', '.join(s['aligned_signals'])}")
+        lines.append("")
+
+    if moderate:
+        lines.append("### MODERATE SIGNALS (3 aligned indicators)")
+        for s in moderate:
+            stars = "\u2b50" * s["confluence_score"]
+            lines.append(f"- **{s['ticker']}** {stars}: {s['sentiment']} sentiment, RSI {s['rsi']}, {s['macd_trend']}")
+        lines.append("")
+
+    return "\n".join(lines)

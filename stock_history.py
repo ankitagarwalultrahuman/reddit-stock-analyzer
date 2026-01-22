@@ -401,3 +401,115 @@ def get_stock_summary(ticker: str, days: int = 30) -> dict:
             'end': df['Date'].iloc[-1].strftime('%Y-%m-%d') if 'Date' in df.columns else None,
         }
     }
+
+
+def get_stock_with_technicals(ticker: str, days: int = 60) -> dict:
+    """
+    Get stock data with technical indicators included.
+
+    Args:
+        ticker: Stock symbol
+        days: Number of days of history (default 60 for better indicator accuracy)
+
+    Returns:
+        dict with history, metrics, and technical analysis
+    """
+    from technical_analysis import get_technical_analysis, signals_to_dict
+
+    df = fetch_stock_history(ticker, days)
+    normalized_ticker = normalize_ticker(ticker)
+
+    if df.empty:
+        return {
+            'ticker': normalized_ticker,
+            'success': False,
+            'error': f"Could not fetch data for {ticker}",
+            'history': pd.DataFrame(),
+            'metrics': {},
+            'technicals': None,
+        }
+
+    # Get performance metrics
+    metrics = calculate_performance_metrics(df)
+
+    # Get technical analysis
+    technical_signals = get_technical_analysis(df, normalized_ticker)
+    technicals_dict = signals_to_dict(technical_signals)
+
+    return {
+        'ticker': normalized_ticker,
+        'success': True,
+        'history': df,
+        'metrics': metrics,
+        'technicals': technicals_dict,
+        'data_points': len(df),
+        'date_range': {
+            'start': df['Date'].iloc[0].strftime('%Y-%m-%d') if 'Date' in df.columns else None,
+            'end': df['Date'].iloc[-1].strftime('%Y-%m-%d') if 'Date' in df.columns else None,
+        }
+    }
+
+
+def get_price_at_date(ticker: str, target_date: str) -> Optional[float]:
+    """
+    Get closing price for a stock on a specific date.
+
+    Args:
+        ticker: Stock symbol
+        target_date: Date string (YYYY-MM-DD)
+
+    Returns:
+        Closing price or None if not available
+    """
+    df = fetch_stock_history(ticker, days=30)
+
+    if df.empty or 'Date' not in df.columns:
+        return None
+
+    # Convert target_date to datetime for comparison
+    target = pd.to_datetime(target_date).date()
+
+    # Find the row with matching date (or closest earlier date)
+    df['date_only'] = pd.to_datetime(df['Date']).dt.date
+
+    matching = df[df['date_only'] == target]
+    if not matching.empty:
+        return float(matching['Close'].iloc[0])
+
+    # Try to find the closest date before target
+    earlier = df[df['date_only'] <= target]
+    if not earlier.empty:
+        return float(earlier['Close'].iloc[-1])
+
+    return None
+
+
+def get_prices_for_outcomes(ticker: str, signal_date: str) -> dict:
+    """
+    Get prices at 1, 3, 5, 10 days after signal date.
+
+    Args:
+        ticker: Stock symbol
+        signal_date: Date of the signal (YYYY-MM-DD)
+
+    Returns:
+        Dict with price_1d, price_3d, price_5d, price_10d
+    """
+    df = fetch_stock_history(ticker, days=20)  # Fetch extra for buffer
+
+    if df.empty or 'Date' not in df.columns:
+        return {}
+
+    signal_dt = pd.to_datetime(signal_date).date()
+    df['date_only'] = pd.to_datetime(df['Date']).dt.date
+
+    prices = {}
+    for days, key in [(1, 'price_1d'), (3, 'price_3d'), (5, 'price_5d'), (10, 'price_10d')]:
+        target_date = signal_dt + timedelta(days=days)
+
+        # Find the closest trading day on or after target
+        future = df[df['date_only'] >= target_date]
+        if not future.empty:
+            prices[key] = float(future['Close'].iloc[0])
+
+    return prices

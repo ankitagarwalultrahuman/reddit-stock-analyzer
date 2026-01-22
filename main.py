@@ -13,7 +13,8 @@ from datetime import datetime, timezone, timedelta
 
 from config import (
     SUBREDDITS, OUTPUT_DIR, SAVE_RAW_DATA, MAX_POST_AGE_HOURS,
-    SESSION_AM, SESSION_PM, AM_CUTOFF_HOUR_IST, IST_UTC_OFFSET_HOURS
+    SESSION_AM, SESSION_PM, AM_CUTOFF_HOUR_IST, IST_UTC_OFFSET_HOURS,
+    SIGNAL_TRACKING_ENABLED
 )
 from reddit_scraper import scrape_all_subreddits
 from summarizer import analyze_with_claude, generate_report
@@ -108,7 +109,7 @@ def parse_args():
 
 def run_comparison_generator():
     """Run the comparison generator after PM report is created."""
-    print("\n[4/4] GENERATING AM vs PM COMPARISON")
+    print("\n[4/5] GENERATING AM vs PM COMPARISON")
     print("-" * 40)
     try:
         from comparison_generator import generate_comparison_for_date, save_comparison, get_ist_today
@@ -121,6 +122,36 @@ def run_comparison_generator():
             print("Comparison could not be generated (AM report may not exist)")
     except Exception as e:
         print(f"Warning: Could not generate comparison: {e}")
+
+
+def run_signal_tracking(report_content: str, report_date: str):
+    """
+    Store signals from the report for accuracy tracking.
+
+    Args:
+        report_content: The generated report content
+        report_date: Date of the report (YYYY-MM-DD format)
+    """
+    if not SIGNAL_TRACKING_ENABLED:
+        print("Signal tracking is disabled in config.")
+        return
+
+    print("\n[5/5] STORING SIGNALS FOR TRACKING")
+    print("-" * 40)
+
+    try:
+        from dashboard_analytics import store_signals_from_report, update_signal_outcomes
+
+        # Store new signals
+        store_signals_from_report(report_content, report_date)
+        print(f"Signals stored for {report_date}")
+
+        # Update outcomes for past signals
+        update_signal_outcomes()
+        print("Updated price outcomes for historical signals")
+
+    except Exception as e:
+        print(f"Warning: Could not store signals: {e}")
 
 
 def main():
@@ -150,7 +181,7 @@ def main():
     print(f"IST Time: {get_ist_now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Step 1: Scrape Reddit data
-    print("\n[1/3] SCRAPING REDDIT DATA")
+    print("\n[1/4] SCRAPING REDDIT DATA")
     print("-" * 40)
     print(f"Target subreddits: {', '.join([f'r/{s}' for s in SUBREDDITS])}")
 
@@ -178,13 +209,13 @@ def main():
         return
 
     # Step 2: Analyze with Claude
-    print("\n[2/3] ANALYZING WITH CLAUDE AI")
+    print("\n[2/4] ANALYZING WITH CLAUDE AI")
     print("-" * 40)
 
     analysis = analyze_with_claude(all_data)
 
     # Step 3: Generate and save report
-    print("\n[3/3] GENERATING REPORT")
+    print("\n[3/4] GENERATING REPORT")
     print("-" * 40)
 
     report = generate_report(analysis, total_posts, total_comments, SUBREDDITS, MAX_POST_AGE_HOURS)
@@ -195,6 +226,10 @@ def main():
     # Generate comparison if this is a PM session
     if session == SESSION_PM:
         run_comparison_generator()
+
+    # Store signals for tracking
+    report_date_formatted = get_ist_now().strftime('%Y-%m-%d')
+    run_signal_tracking(report, report_date_formatted)
 
     # Print the report
     print("\n" + "=" * 80)

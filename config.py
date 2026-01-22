@@ -72,3 +72,38 @@ SESSION_PM = "PM"
 AM_CUTOFF_HOUR_IST = 12  # Before 12 PM IST is considered morning session
 IST_UTC_OFFSET_HOURS = 5.5  # IST is UTC+5:30
 VOLUME_CHANGE_THRESHOLD = 20  # Percentage change threshold for volume changes
+
+# Technical Analysis Configuration
+TECHNICAL_ANALYSIS_ENABLED = True  # Enable/disable technical analysis features
+TECHNICAL_HISTORY_DAYS = 60  # Days of price history for indicator calculations
+
+# RSI settings
+RSI_PERIOD = 14
+RSI_OVERSOLD = 30
+RSI_OVERBOUGHT = 70
+
+# MACD settings
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+
+# Moving Average settings
+EMA_SHORT = 20
+EMA_MEDIUM = 50
+EMA_LONG = 200
+
+# Bollinger Bands settings
+BB_PERIOD = 20
+BB_STD_DEV = 2.0
+
+# ATR settings
+ATR_PERIOD = 14
+
+# Confluence Signal settings
+MIN_CONFLUENCE_SCORE = 2  # Minimum score to consider a signal
+STRONG_CONFLUENCE_SCORE = 4  # Score for "strong" signals
+MIN_MENTIONS_FOR_SIGNAL = 5  # Minimum Reddit mentions to analyze
+
+# Signal Tracking settings
+SIGNAL_TRACKING_ENABLED = True  # Enable signal storage and accuracy tracking
+SIGNAL_RETENTION_DAYS = 90  # Days to keep signal history
