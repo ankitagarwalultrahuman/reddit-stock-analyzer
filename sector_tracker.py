@@ -77,23 +77,33 @@ class StockPerformance:
     technical_bias: str
 
 
-def analyze_stock_for_sector(ticker: str) -> Optional[StockPerformance]:
+def analyze_stock_for_sector(ticker: str, debug: bool = False) -> Optional[StockPerformance]:
     """Analyze a single stock for sector analysis."""
     try:
         df = fetch_stock_history(ticker, days=60)
+
+        if debug:
+            print(f"[DEBUG] {ticker}: df.empty={df.empty}, len={len(df)}, cols={df.columns.tolist() if not df.empty else 'N/A'}")
+
         if df.empty:
-            print(f"[SECTOR] {ticker}: Empty dataframe")
+            if debug:
+                print(f"[SECTOR] {ticker}: Empty dataframe")
             return None
         if len(df) < 20:
-            print(f"[SECTOR] {ticker}: Only {len(df)} rows (need 20+)")
+            if debug:
+                print(f"[SECTOR] {ticker}: Only {len(df)} rows (need 20+)")
             return None
 
         # Get technical analysis
         signals = get_technical_analysis(df, ticker)
 
+        if debug:
+            print(f"[DEBUG] {ticker}: signals.rsi={signals.rsi}, bias={signals.technical_bias}")
+
         # Calculate returns - use 'Close' column
         if 'Close' not in df.columns:
-            print(f"[SECTOR] {ticker}: No 'Close' column. Columns: {df.columns.tolist()}")
+            if debug:
+                print(f"[SECTOR] {ticker}: No 'Close' column. Columns: {df.columns.tolist()}")
             return None
 
         close = df['Close']
@@ -111,6 +121,9 @@ def analyze_stock_for_sector(ticker: str) -> Optional[StockPerformance]:
         if len(close) > 20 and float(close.iloc[-20]) != 0:
             return_20d = ((current / float(close.iloc[-20])) - 1) * 100
 
+        if debug:
+            print(f"[DEBUG] {ticker}: current={current}, 1d={return_1d:.2f}%, 5d={return_5d:.2f}%")
+
         return StockPerformance(
             ticker=ticker,
             current_price=round(current, 2),
@@ -122,7 +135,10 @@ def analyze_stock_for_sector(ticker: str) -> Optional[StockPerformance]:
         )
 
     except Exception as e:
-        print(f"[SECTOR] {ticker}: Exception - {type(e).__name__}: {e}")
+        if debug:
+            import traceback
+            print(f"[SECTOR] {ticker}: Exception - {type(e).__name__}: {e}")
+            print(traceback.format_exc())
         return None
 
 

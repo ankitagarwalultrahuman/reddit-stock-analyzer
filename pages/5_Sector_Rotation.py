@@ -182,16 +182,49 @@ def main():
                 st.error(f"❌ Fetch error: {e}")
 
         st.markdown("---")
-        st.markdown("**Test Single Stock Analysis:**")
+        st.markdown("**Test Single Stock Analysis (Detailed):**")
         if st.button("Test HDFCBANK Analysis"):
             try:
-                result = analyze_stock_for_sector("HDFCBANK")
+                # Step 1: Fetch data
+                st.write("Step 1: Fetching HDFCBANK data...")
+                test_df = fetch_stock_history("HDFCBANK", days=60)
+                st.write(f"- DataFrame empty: {test_df.empty}")
+                st.write(f"- Rows: {len(test_df)}")
+                st.write(f"- Columns: {test_df.columns.tolist()}")
+
+                if not test_df.empty and len(test_df) > 0:
+                    st.write(f"- First row: {test_df.iloc[0].to_dict()}")
+                    st.write(f"- Last row: {test_df.iloc[-1].to_dict()}")
+
+                # Step 2: Check Close column
+                if 'Close' in test_df.columns:
+                    st.write(f"- Close values (last 5): {test_df['Close'].tail().tolist()}")
+
+                # Step 3: Run full analysis with debug
+                st.write("Step 2: Running analyze_stock_for_sector with debug=True...")
+                import io
+                import sys
+
+                # Capture print output
+                old_stdout = sys.stdout
+                sys.stdout = buffer = io.StringIO()
+
+                result = analyze_stock_for_sector("HDFCBANK", debug=True)
+
+                debug_output = buffer.getvalue()
+                sys.stdout = old_stdout
+
+                if debug_output:
+                    st.code(debug_output, language="text")
+
                 if result:
                     st.success(f"✅ HDFCBANK: Price=₹{result.current_price}, 1D={result.return_1d:+.2f}%, 5D={result.return_5d:+.2f}%, RSI={result.rsi:.1f}")
                 else:
-                    st.error("❌ HDFCBANK analysis returned None")
+                    st.error("❌ HDFCBANK analysis returned None - check debug output above")
             except Exception as e:
                 st.error(f"❌ Error: {e}")
+                import traceback
+                st.code(traceback.format_exc())
 
         st.markdown("**Test Banking Sector (Sequential):**")
         if st.button("Test Banking Sector"):

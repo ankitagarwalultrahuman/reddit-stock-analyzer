@@ -79,9 +79,14 @@ def calculate_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
         Series with RSI values
     """
     if PANDAS_TA_AVAILABLE:
-        return ta.rsi(df['Close'], length=period)
+        try:
+            result = ta.rsi(df['Close'], length=period)
+            if result is not None:
+                return result
+        except Exception:
+            pass  # Fall back to manual calculation
 
-    # Manual RSI calculation
+    # Manual RSI calculation (fallback)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -105,14 +110,29 @@ def calculate_macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int
         Tuple of (MACD line, Signal line, Histogram)
     """
     if PANDAS_TA_AVAILABLE:
-        macd_df = ta.macd(df['Close'], fast=fast, slow=slow, signal=signal)
-        if macd_df is not None and not macd_df.empty:
-            macd_col = f'MACD_{fast}_{slow}_{signal}'
-            signal_col = f'MACDs_{fast}_{slow}_{signal}'
-            hist_col = f'MACDh_{fast}_{slow}_{signal}'
-            return macd_df[macd_col], macd_df[signal_col], macd_df[hist_col]
+        try:
+            macd_df = ta.macd(df['Close'], fast=fast, slow=slow, signal=signal)
+            if macd_df is not None and not macd_df.empty:
+                # Find columns dynamically (pandas-ta column names can vary)
+                macd_col = None
+                signal_col = None
+                hist_col = None
 
-    # Manual MACD calculation
+                for col in macd_df.columns:
+                    col_lower = col.lower()
+                    if col.startswith('MACD_') or col_lower == 'macd':
+                        macd_col = col
+                    elif col.startswith('MACDs_') or 'signal' in col_lower:
+                        signal_col = col
+                    elif col.startswith('MACDh_') or 'hist' in col_lower:
+                        hist_col = col
+
+                if macd_col and signal_col and hist_col:
+                    return macd_df[macd_col], macd_df[signal_col], macd_df[hist_col]
+        except Exception:
+            pass  # Fall back to manual calculation
+
+    # Manual MACD calculation (fallback)
     ema_fast = df['Close'].ewm(span=fast, adjust=False).mean()
     ema_slow = df['Close'].ewm(span=slow, adjust=False).mean()
     macd_line = ema_fast - ema_slow
@@ -125,7 +145,12 @@ def calculate_macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int
 def calculate_ema(df: pd.DataFrame, period: int) -> pd.Series:
     """Calculate Exponential Moving Average."""
     if PANDAS_TA_AVAILABLE:
-        return ta.ema(df['Close'], length=period)
+        try:
+            result = ta.ema(df['Close'], length=period)
+            if result is not None:
+                return result
+        except Exception:
+            pass  # Fall back to manual calculation
     return df['Close'].ewm(span=period, adjust=False).mean()
 
 
@@ -142,11 +167,31 @@ def calculate_bollinger_bands(df: pd.DataFrame, period: int = 20, std_dev: float
         Tuple of (Upper band, Middle band, Lower band)
     """
     if PANDAS_TA_AVAILABLE:
-        bb = ta.bbands(df['Close'], length=period, std=std_dev)
-        if bb is not None and not bb.empty:
-            return bb[f'BBU_{period}_{std_dev}'], bb[f'BBM_{period}_{std_dev}'], bb[f'BBL_{period}_{std_dev}']
+        try:
+            bb = ta.bbands(df['Close'], length=period, std=std_dev)
+            if bb is not None and not bb.empty:
+                # pandas-ta column names can vary - try multiple formats
+                # Format 1: BBU_20_2.0 (with decimal)
+                # Format 2: BBU_20_2 (without decimal)
+                upper_col = None
+                middle_col = None
+                lower_col = None
 
-    # Manual Bollinger Bands calculation
+                for col in bb.columns:
+                    if col.startswith('BBU'):
+                        upper_col = col
+                    elif col.startswith('BBM'):
+                        middle_col = col
+                    elif col.startswith('BBL'):
+                        lower_col = col
+
+                if upper_col and middle_col and lower_col:
+                    return bb[upper_col], bb[middle_col], bb[lower_col]
+        except Exception as e:
+            # Fall back to manual calculation if pandas-ta fails
+            pass
+
+    # Manual Bollinger Bands calculation (fallback)
     middle = df['Close'].rolling(window=period).mean()
     std = df['Close'].rolling(window=period).std()
     upper = middle + (std * std_dev)
@@ -167,9 +212,14 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
         Series with ATR values
     """
     if PANDAS_TA_AVAILABLE:
-        return ta.atr(df['High'], df['Low'], df['Close'], length=period)
+        try:
+            result = ta.atr(df['High'], df['Low'], df['Close'], length=period)
+            if result is not None:
+                return result
+        except Exception:
+            pass  # Fall back to manual calculation
 
-    # Manual ATR calculation
+    # Manual ATR calculation (fallback)
     high_low = df['High'] - df['Low']
     high_close_prev = abs(df['High'] - df['Close'].shift(1))
     low_close_prev = abs(df['Low'] - df['Close'].shift(1))
