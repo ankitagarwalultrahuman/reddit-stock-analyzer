@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 
-from config import DASHBOARD_CACHE_TTL, WEEKLY_SUMMARY_DAYS
+from config import DASHBOARD_CACHE_TTL, WEEKLY_SUMMARY_DAYS, NEWS_ENABLED
 from dashboard_analytics import (
     get_available_dates,
     get_report_for_date,
@@ -19,6 +19,13 @@ from dashboard_analytics import (
     generate_todays_actions,
     calculate_sentiment_distribution,
 )
+
+# Import news fetcher (optional - may not be configured)
+try:
+    from news_fetcher import get_news_highlights, FinnhubClient
+    NEWS_AVAILABLE = True
+except ImportError:
+    NEWS_AVAILABLE = False
 
 # Color scheme
 COLORS = {
@@ -306,6 +313,67 @@ st.markdown("""
     /* Ensure all text is dark on light background */
     p, span, div, li {
         color: #1e293b;
+    }
+
+    /* News Highlights Section */
+    .news-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        border-left: 4px solid #3b82f6;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .news-card-bullish {
+        border-left-color: #16a34a;
+    }
+    .news-card-bearish {
+        border-left-color: #dc2626;
+    }
+    .news-card-neutral {
+        border-left-color: #f59e0b;
+    }
+    .news-headline {
+        font-weight: 600;
+        color: #1e293b;
+        font-size: 0.95rem;
+        margin-bottom: 0.5rem;
+    }
+    .news-meta {
+        font-size: 0.75rem;
+        color: #64748b;
+        margin-bottom: 0.5rem;
+    }
+    .news-tickers {
+        display: inline-flex;
+        gap: 0.25rem;
+        flex-wrap: wrap;
+    }
+    .ticker-badge {
+        background: #e0e7ff;
+        color: #3730a3;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+    .news-summary {
+        color: #475569;
+        font-size: 0.85rem;
+        line-height: 1.4;
+    }
+    .divergence-alert {
+        background: #fef3c7;
+        border-left: 3px solid #f59e0b;
+        padding: 0.5rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        margin-top: 0.5rem;
+    }
+    .news-alignment {
+        font-size: 0.8rem;
+        margin-top: 0.5rem;
+        color: #64748b;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -605,6 +673,102 @@ def render_metric_cards(report: dict):
             """, unsafe_allow_html=True)
 
 
+def render_news_highlights(report: dict, portfolio_stocks: list = None):
+    """Render the Financial News Highlights section."""
+    if not NEWS_AVAILABLE or not NEWS_ENABLED:
+        return
+
+    st.markdown('<div class="section-header">📰 FINANCIAL NEWS HIGHLIGHTS</div>', unsafe_allow_html=True)
+
+    # Check if Finnhub is configured
+    try:
+        finnhub = FinnhubClient()
+        if not finnhub.is_configured():
+            st.info("News API not configured. Add FINNHUB_API_KEY to your .env file to enable news highlights.")
+            return
+    except Exception:
+        st.info("News feature not available.")
+        return
+
+    content = report.get("content", "")
+
+    with st.spinner("Fetching and analyzing financial news..."):
+        try:
+            analysis = get_news_highlights(content, portfolio_stocks)
+        except Exception as e:
+            st.warning(f"Could not fetch news: {e}")
+            return
+
+    if analysis.get("error"):
+        st.warning(f"News analysis error: {analysis.get('error')}")
+
+    highlights = analysis.get("highlights", [])
+    divergences = analysis.get("sentiment_divergences", [])
+    market_summary = analysis.get("market_summary", "")
+    alerts = analysis.get("key_alerts", [])
+
+    if not highlights and not market_summary:
+        st.info("No relevant news found for the discussed stocks.")
+        return
+
+    # Render news cards
+    if highlights:
+        for item in highlights[:5]:
+            sentiment = item.get("news_sentiment", "neutral")
+            card_class = f"news-card news-card-{sentiment}"
+
+            tickers = item.get("tickers", [])
+            tickers_html = " ".join([f'<span class="ticker-badge">{t}</span>' for t in tickers[:3]])
+
+            alignment = item.get("reddit_alignment", "not_discussed")
+            alignment_icon = {"aligned": "✅", "divergent": "⚠️", "not_discussed": "➖"}.get(alignment, "➖")
+
+            reddit_sent = item.get("reddit_sentiment", "unknown")
+
+            st.markdown(f"""
+            <div class="{card_class}">
+                <div class="news-headline">{item.get('headline', 'News')[:100]}</div>
+                <div class="news-meta">
+                    <span class="news-tickers">{tickers_html}</span>
+                    <span style="margin-left: 0.5rem;">| {item.get('source', 'Unknown')}</span>
+                    <span style="margin-left: 0.5rem;">| Impact: {item.get('news_impact', 'medium').upper()}</span>
+                </div>
+                <div class="news-summary">{item.get('summary', '')[:200]}</div>
+                <div class="news-alignment">
+                    {alignment_icon} News: <strong>{sentiment.upper()}</strong> | Reddit: <strong>{reddit_sent.upper()}</strong>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Render divergence alerts
+    if divergences:
+        st.markdown("#### ⚠️ Sentiment Divergences")
+        for div in divergences[:3]:
+            st.markdown(f"""
+            <div class="divergence-alert">
+                <strong>{div.get('ticker', 'Unknown')}</strong>:
+                News is <strong>{div.get('news_sentiment', 'unknown').upper()}</strong>
+                but Reddit is <strong>{div.get('reddit_sentiment', 'unknown').upper()}</strong>.
+                {div.get('note', '')}
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Market summary
+    if market_summary:
+        st.markdown(f"""
+        <div class="focus-summary" style="margin-top: 1rem;">
+            <h4>📊 News Summary</h4>
+            <p>{market_summary}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Key alerts
+    if alerts:
+        with st.expander("🔔 Key Alerts", expanded=False):
+            for alert in alerts[:4]:
+                st.markdown(f"- {alert}")
+
+
 def render_detailed_sections(report: dict):
     """Render detailed report sections in card-based layout."""
     content = report.get("content", "")
@@ -723,6 +887,18 @@ def main():
 
     # Metrics row
     render_metric_cards(report)
+
+    st.markdown("---")
+
+    # Financial News Highlights (if enabled)
+    try:
+        from portfolio_analyzer import load_portfolio
+        portfolio = load_portfolio()
+        portfolio_tickers = [h.get("ticker", h.get("trading_symbol", "")) for h in portfolio] if portfolio else None
+    except Exception:
+        portfolio_tickers = None
+
+    render_news_highlights(report, portfolio_tickers)
 
     st.markdown("---")
 

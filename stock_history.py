@@ -1,0 +1,403 @@
+"""
+Stock History Module - Fetches historical price data for NSE stocks.
+
+Uses yfinance for free, no-API-key data access.
+Implements SQLite-based caching to minimize API calls.
+"""
+
+import sqlite3
+import json
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Optional
+import pandas as pd
+
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
+
+from portfolio_analyzer import normalize_ticker, TICKER_MAPPINGS
+
+# Cache configuration
+CACHE_DB = "stock_cache.db"
+CACHE_TTL_HOURS = 24
+
+# NSE suffix for yfinance
+NSE_SUFFIX = ".NS"
+
+# Additional ETF mappings for yfinance
+ETF_MAPPINGS = {
+    "SILVERBEES": "SILVERBEES.NS",
+    "SILVER": "SILVERBEES.NS",
+    "GOLDBEES": "GOLDBEES.NS",
+    "GOLD": "GOLDBEES.NS",
+    "NIFTYBEES": "NIFTYBEES.NS",
+    "NIFTY50": "NIFTYBEES.NS",
+    "BANKBEES": "BANKBEES.NS",
+    "SILVER ETF": "SILVERBEES.NS",
+    "GOLD ETF": "GOLDBEES.NS",
+    "NIFTY 50 ETF": "NIFTYBEES.NS",
+}
+
+
+def init_cache_db():
+    """Initialize SQLite cache database."""
+    conn = sqlite3.connect(CACHE_DB)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_cache (
+            ticker TEXT PRIMARY KEY,
+            data TEXT NOT NULL,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_expires ON stock_cache(expires_at)
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def get_nse_symbol(ticker: str) -> str:
+    """
+    Convert ticker to yfinance NSE format.
+
+    Handles:
+    - Already has .NS suffix
+    - ETF names (SILVERBEES, NIFTYBEES)
+    - Full company names
+    - Common abbreviations
+    """
+    ticker_upper = ticker.upper().strip()
+
+    # Check ETF mappings first
+    if ticker_upper in ETF_MAPPINGS:
+        return ETF_MAPPINGS[ticker_upper]
+
+    # Normalize using portfolio_analyzer mappings
+    normalized = normalize_ticker(ticker_upper)
+
+    # Check if already has suffix
+    if normalized.endswith(".NS") or normalized.endswith(".BO"):
+        return normalized
+
+    # Add NSE suffix
+    return f"{normalized}.NS"
+
+
+def get_cached_data(ticker: str) -> Optional[pd.DataFrame]:
+    """Retrieve cached price data if not expired."""
+    init_cache_db()
+
+    conn = sqlite3.connect(CACHE_DB)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT data FROM stock_cache
+        WHERE ticker = ? AND expires_at > datetime('now')
+    """, (ticker.upper(),))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        try:
+            return pd.read_json(row[0])
+        except Exception:
+            return None
+    return None
+
+
+def cache_data(ticker: str, df: pd.DataFrame):
+    """Store price data in cache."""
+    init_cache_db()
+
+    conn = sqlite3.connect(CACHE_DB)
+    cursor = conn.cursor()
+
+    expires_at = datetime.now() + timedelta(hours=CACHE_TTL_HOURS)
+
+    # Convert DataFrame to JSON string
+    data_json = df.to_json(date_format='iso')
+
+    cursor.execute("""
+        INSERT OR REPLACE INTO stock_cache (ticker, data, fetched_at, expires_at)
+        VALUES (?, ?, datetime('now'), ?)
+    """, (ticker.upper(), data_json, expires_at.isoformat()))
+
+    conn.commit()
+    conn.close()
+
+
+def clear_stale_cache():
+    """Remove expired cache entries."""
+    init_cache_db()
+
+    conn = sqlite3.connect(CACHE_DB)
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM stock_cache WHERE expires_at < datetime('now')")
+
+    conn.commit()
+    conn.close()
+
+
+def fetch_stock_history(ticker: str, days: int = 30) -> pd.DataFrame:
+    """
+    Fetch historical price data for a stock.
+
+    Args:
+        ticker: NSE stock symbol (e.g., "RELIANCE", "TCS")
+        days: Number of days of history (default 30)
+
+    Returns:
+        DataFrame with columns: Open, High, Low, Close, Volume
+        Returns empty DataFrame if fetch fails
+    """
+    if yf is None:
+        print("yfinance not installed. Run: pip install yfinance")
+        return pd.DataFrame()
+
+    # Normalize ticker
+    normalized_ticker = normalize_ticker(ticker)
+
+    # Check cache first
+    cached = get_cached_data(normalized_ticker)
+    if cached is not None and not cached.empty:
+        return cached
+
+    # Convert to yfinance format
+    yf_symbol = get_nse_symbol(ticker)
+
+    try:
+        stock = yf.Ticker(yf_symbol)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days + 7)  # Extra buffer for weekends/holidays
+
+        df = stock.history(start=start_date, end=end_date)
+
+        if df.empty:
+            # Try without .NS suffix (some ETFs)
+            alt_symbol = yf_symbol.replace(".NS", "")
+            stock = yf.Ticker(alt_symbol)
+            df = stock.history(start=start_date, end=end_date)
+
+        if df.empty:
+            # Try BSE suffix
+            bse_symbol = normalized_ticker + ".BO"
+            stock = yf.Ticker(bse_symbol)
+            df = stock.history(start=start_date, end=end_date)
+
+        if not df.empty:
+            # Keep only relevant columns
+            df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+            # Reset index to make Date a column
+            df = df.reset_index()
+            df = df.rename(columns={'index': 'Date'})
+            cache_data(normalized_ticker, df)
+
+        return df
+
+    except Exception as e:
+        print(f"Error fetching {ticker} ({yf_symbol}): {e}")
+        return pd.DataFrame()
+
+
+def fetch_multiple_stocks(tickers: list[str], days: int = 30) -> dict[str, pd.DataFrame]:
+    """
+    Fetch historical data for multiple stocks.
+
+    Args:
+        tickers: List of ticker symbols
+        days: Number of days of history
+
+    Returns:
+        Dict mapping ticker to DataFrame
+    """
+    results = {}
+
+    for ticker in tickers:
+        df = fetch_stock_history(ticker, days)
+        if not df.empty:
+            results[normalize_ticker(ticker)] = df
+
+    return results
+
+
+def calculate_performance_metrics(df: pd.DataFrame) -> dict:
+    """
+    Calculate key performance metrics from price history.
+
+    Args:
+        df: DataFrame with 'Close' column
+
+    Returns:
+        dict with:
+        - total_return: Percentage return over period
+        - annualized_return: Annualized return rate
+        - volatility: Standard deviation of daily returns (annualized)
+        - sharpe_ratio: Risk-adjusted return (assuming 6% risk-free rate)
+        - max_drawdown: Maximum peak-to-trough decline
+        - best_day: Best single-day return
+        - worst_day: Worst single-day return
+    """
+    if df.empty or len(df) < 2:
+        return {}
+
+    # Ensure we have Close column
+    if 'Close' not in df.columns:
+        return {}
+
+    close_prices = df['Close']
+
+    # Calculate daily returns
+    daily_returns = close_prices.pct_change().dropna()
+
+    # Total return
+    total_return = (close_prices.iloc[-1] / close_prices.iloc[0] - 1) * 100
+
+    # Annualized return (assuming 252 trading days)
+    num_days = len(df)
+    annualized_return = ((1 + total_return/100) ** (252/num_days) - 1) * 100
+
+    # Volatility (annualized)
+    daily_vol = daily_returns.std()
+    volatility = daily_vol * (252 ** 0.5) * 100
+
+    # Sharpe ratio (6% risk-free rate for India)
+    risk_free_rate = 0.06
+    excess_return = annualized_return/100 - risk_free_rate
+    sharpe_ratio = excess_return / (volatility/100) if volatility > 0 else 0
+
+    # Max drawdown
+    rolling_max = close_prices.cummax()
+    drawdown = (close_prices - rolling_max) / rolling_max
+    max_drawdown = drawdown.min() * 100
+
+    # Best/worst days
+    best_day = daily_returns.max() * 100
+    worst_day = daily_returns.min() * 100
+
+    return {
+        'total_return': round(total_return, 2),
+        'annualized_return': round(annualized_return, 2),
+        'volatility': round(volatility, 2),
+        'sharpe_ratio': round(sharpe_ratio, 2),
+        'max_drawdown': round(max_drawdown, 2),
+        'best_day': round(best_day, 2),
+        'worst_day': round(worst_day, 2),
+        'start_price': round(close_prices.iloc[0], 2),
+        'end_price': round(close_prices.iloc[-1], 2),
+        'high': round(df['High'].max(), 2) if 'High' in df.columns else None,
+        'low': round(df['Low'].min(), 2) if 'Low' in df.columns else None,
+    }
+
+
+def compare_sentiment_vs_performance(
+    sentiment: str,
+    price_change: float,
+    mentions: int = 0
+) -> dict:
+    """
+    Analyze whether Reddit sentiment aligned with actual price movement.
+
+    Args:
+        sentiment: Reddit sentiment (bullish/bearish/neutral/mixed)
+        price_change: Actual percentage price change
+        mentions: Number of Reddit mentions
+
+    Returns:
+        dict with alignment_score, verdict, explanation
+    """
+    # Sentiment mapping to expected movement
+    sentiment_expectations = {
+        'bullish': 'up',
+        'bearish': 'down',
+        'neutral': 'flat',
+        'mixed': 'volatile',
+    }
+
+    expected = sentiment_expectations.get(sentiment.lower(), 'unknown')
+
+    # Determine actual movement
+    if price_change > 2:
+        actual = 'up'
+    elif price_change < -2:
+        actual = 'down'
+    else:
+        actual = 'flat'
+
+    # Calculate alignment
+    if expected == actual:
+        alignment_score = 100
+        verdict = "ALIGNED"
+        emoji = "✅"
+    elif expected == 'flat' and abs(price_change) < 5:
+        alignment_score = 75
+        verdict = "PARTIALLY ALIGNED"
+        emoji = "🟡"
+    elif expected == 'volatile':
+        alignment_score = 50
+        verdict = "INCONCLUSIVE"
+        emoji = "🔵"
+    elif expected == 'unknown':
+        alignment_score = 0
+        verdict = "UNKNOWN"
+        emoji = "❓"
+    else:
+        alignment_score = 0
+        verdict = "MISALIGNED"
+        emoji = "❌"
+
+    return {
+        'sentiment': sentiment,
+        'expected_movement': expected,
+        'actual_movement': actual,
+        'price_change': round(price_change, 2),
+        'alignment_score': alignment_score,
+        'verdict': verdict,
+        'emoji': emoji,
+        'mentions': mentions,
+    }
+
+
+def get_stock_summary(ticker: str, days: int = 30) -> dict:
+    """
+    Get complete stock summary including history and metrics.
+
+    Args:
+        ticker: Stock symbol
+        days: Number of days of history
+
+    Returns:
+        dict with history DataFrame, metrics, and metadata
+    """
+    df = fetch_stock_history(ticker, days)
+
+    if df.empty:
+        return {
+            'ticker': normalize_ticker(ticker),
+            'success': False,
+            'error': f"Could not fetch data for {ticker}",
+            'history': pd.DataFrame(),
+            'metrics': {},
+        }
+
+    metrics = calculate_performance_metrics(df)
+
+    return {
+        'ticker': normalize_ticker(ticker),
+        'success': True,
+        'history': df,
+        'metrics': metrics,
+        'data_points': len(df),
+        'date_range': {
+            'start': df['Date'].iloc[0].strftime('%Y-%m-%d') if 'Date' in df.columns else None,
+            'end': df['Date'].iloc[-1].strftime('%Y-%m-%d') if 'Date' in df.columns else None,
+        }
+    }

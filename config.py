@@ -53,3 +53,14 @@ SAVE_RAW_DATA = True  # Save scraped data to JSON for debugging
 # Dashboard settings
 DASHBOARD_CACHE_TTL = 3600  # Cache TTL in seconds (1 hour)
 WEEKLY_SUMMARY_DAYS = 7  # Number of days for weekly summary
+
+# Stock History settings
+STOCK_HISTORY_DAYS = 30  # Default days of price history
+STOCK_CACHE_TTL_HOURS = 24  # Cache expiration for stock data
+
+# News API Configuration
+FINNHUB_API_KEY = get_secret("FINNHUB_API_KEY")
+NEWS_FETCH_HOURS = 48  # Hours of news to fetch
+NEWS_CACHE_TTL = 1800  # 30 minutes cache
+NEWS_MAX_ARTICLES = 20  # Max articles to analyze
+NEWS_ENABLED = True  # Feature flag for news section

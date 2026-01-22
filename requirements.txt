@@ -5,6 +5,9 @@ streamlit>=1.31.0
 plotly>=5.18.0
 pandas>=2.0.0
 
+# Stock Historical Data
+yfinance>=0.2.36
+
 # Groww Trade API
 growwapi>=1.0.0
 
