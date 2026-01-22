@@ -103,6 +103,17 @@ The Streamlit dashboard provides:
 
 ## Automated Daily Runs
 
+### Using GitHub Actions (Recommended)
+
+The repo includes a GitHub Actions workflow that runs daily at 8:00 AM IST automatically.
+
+**Setup:**
+1. Go to your repo → Settings → Secrets and variables → Actions
+2. Add secret: `ANTHROPIC_API_KEY` with your API key
+3. The workflow will run automatically and commit reports to the repo
+
+**Manual trigger:** Go to Actions tab → "Daily Stock Analysis" → "Run workflow"
+
 ### Using Cron (Linux/Mac)
 
 ```bash
