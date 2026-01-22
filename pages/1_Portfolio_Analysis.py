@@ -11,6 +11,12 @@ from groww_integration import (
     get_portfolio_summary,
     analyze_holdings_against_sentiment,
     get_mf_underlying_stocks,
+    load_mf_portfolio,
+    save_mf_portfolio,
+    add_mf_holding,
+    remove_mf_holding,
+    analyze_mf_against_sentiment,
+    MF_CATEGORY_HOLDINGS,
 )
 from dashboard_analytics import get_available_dates, get_report_for_date
 from portfolio_analyzer import normalize_ticker
@@ -264,101 +270,188 @@ def render_risk_alerts(analyzed_holdings: list):
 
 
 def render_mf_analysis(report_content: str):
-    """Render mutual fund underlying stocks analysis."""
-    st.subheader("📊 Mutual Fund Underlying Analysis")
+    """Render mutual fund holdings and analysis."""
+    st.subheader("📈 Your Mutual Fund Holdings")
 
-    mf_name = st.text_input(
-        "Enter Mutual Fund Name",
-        placeholder="e.g., Nifty 50 Index Fund, Large Cap Fund",
-        help="Enter the name of your mutual fund to see sentiment of its underlying stocks"
-    )
+    # Load existing MF holdings
+    mf_holdings = load_mf_portfolio()
 
-    if mf_name:
-        underlying = get_mf_underlying_stocks(mf_name)
+    # Add new MF form
+    with st.expander("➕ Add Mutual Fund Holding", expanded=not mf_holdings):
+        with st.form("add_mf_holding"):
+            col1, col2, col3 = st.columns([2, 1, 1])
 
-        st.write(f"**Analyzing {len(underlying)} underlying stocks for:** {mf_name}")
+            with col1:
+                mf_name = st.text_input(
+                    "Mutual Fund Name",
+                    placeholder="e.g., Axis Bluechip Fund, SBI Small Cap",
+                    help="Enter the name of your mutual fund"
+                )
+            with col2:
+                invested_amount = st.number_input(
+                    "Invested Amount (₹)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1000.0
+                )
+            with col3:
+                current_value = st.number_input(
+                    "Current Value (₹)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1000.0,
+                    help="Leave 0 to use invested amount"
+                )
 
-        # Parse sentiment from report
-        from dashboard_analytics import parse_key_insights_structured, parse_stock_mentions
+            submitted = st.form_submit_button("Add Mutual Fund")
 
-        insights = parse_key_insights_structured(report_content)
-        stocks = parse_stock_mentions(report_content)
+            if submitted and mf_name and invested_amount > 0:
+                add_mf_holding(mf_name, invested_amount, current_value)
+                st.success(f"Added {mf_name} to your MF portfolio!")
+                st.rerun()
 
-        discussed = {}
-        for i in insights + stocks:
-            ticker = normalize_ticker(i.get("ticker", ""))
-            if ticker not in discussed:
-                discussed[ticker] = {
-                    "sentiment": i.get("sentiment", "neutral"),
-                    "mentions": i.get("total_mentions", 0),
-                }
+    if not mf_holdings:
+        st.info("No mutual fund holdings added yet. Add your MF investments above to analyze them against Reddit sentiment.")
 
-        # Analyze underlying stocks
-        mf_analysis = []
-        for stock in underlying:
-            normalized = normalize_ticker(stock)
-            if normalized in discussed:
-                mf_analysis.append({
-                    "Stock": stock,
-                    "Sentiment": discussed[normalized]["sentiment"].capitalize(),
-                    "Mentions": discussed[normalized]["mentions"],
-                    "Status": "Discussed"
-                })
-            else:
-                mf_analysis.append({
-                    "Stock": stock,
-                    "Sentiment": "-",
-                    "Mentions": 0,
-                    "Status": "Not Discussed"
-                })
+        # Show available fund categories for reference
+        with st.expander("📚 Supported Fund Categories"):
+            st.write("The system recognizes and maps these fund types to their typical underlying stocks:")
+            categories = [
+                "**Nifty 50 Index Funds** - UTI, HDFC, SBI, ICICI Nifty 50",
+                "**Large Cap / Bluechip** - Mirae, Axis, SBI Bluechip",
+                "**Mid Cap Funds** - Axis, Kotak, PGIM Midcap",
+                "**Small Cap Funds** - Axis, SBI, Nippon Small Cap",
+                "**Flexi Cap / Multi Cap** - Parag Parikh, UTI Flexi Cap",
+                "**IT / Technology Funds** - ICICI, Tata Digital India",
+                "**Banking & Financial** - ICICI, SBI Banking",
+                "**Pharma / Healthcare** - SBI Healthcare, Nippon Pharma",
+                "**Infrastructure** - ICICI, SBI Infra",
+            ]
+            for cat in categories:
+                st.write(f"• {cat}")
+        return
 
-        df = pd.DataFrame(mf_analysis)
+    # Analyze MF holdings against sentiment
+    analyzed_mf = analyze_mf_against_sentiment(mf_holdings, report_content)
 
-        # Summary
-        discussed_count = len([x for x in mf_analysis if x["Status"] == "Discussed"])
-        bullish_count = len([x for x in mf_analysis if x["Sentiment"] == "Bullish"])
-        bearish_count = len([x for x in mf_analysis if x["Sentiment"] == "Bearish"])
+    # Portfolio Summary
+    total_invested = sum(mf["invested_amount"] for mf in analyzed_mf)
+    total_current = sum(mf["current_value"] for mf in analyzed_mf)
+    total_pnl = total_current - total_invested
+    pnl_percent = (total_pnl / total_invested * 100) if total_invested > 0 else 0
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Stocks", len(underlying))
-        col2.metric("Discussed", discussed_count)
-        col3.metric("Bullish", bullish_count)
-        col4.metric("Bearish", bearish_count)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Invested", f"₹{total_invested:,.0f}")
+    with col2:
+        st.metric("Current Value", f"₹{total_current:,.0f}")
+    with col3:
+        st.metric("Total P&L", f"₹{total_pnl:,.0f}", f"{pnl_percent:.2f}%",
+                  delta_color="normal" if total_pnl >= 0 else "inverse")
+    with col4:
+        st.metric("Funds", len(analyzed_mf))
 
-        # Show table
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    st.markdown("---")
 
-        # Overall assessment
-        if bearish_count > bullish_count:
-            st.warning(f"⚠️ More bearish sentiment ({bearish_count}) than bullish ({bullish_count}) among discussed stocks")
-        elif bullish_count > bearish_count:
-            st.success(f"✅ More bullish sentiment ({bullish_count}) than bearish ({bearish_count}) among discussed stocks")
-        else:
-            st.info("ℹ️ Mixed sentiment among underlying stocks")
+    # MF Holdings Table
+    st.subheader("Holdings Analysis")
+
+    # Create summary dataframe
+    mf_summary = []
+    for mf in analyzed_mf:
+        sentiment_emoji = {
+            "bullish": "🟢",
+            "slightly_bullish": "🟢",
+            "bearish": "🔴",
+            "slightly_bearish": "🔴",
+            "neutral": "🟡"
+        }.get(mf["overall_sentiment"], "⚪")
+
+        risk_emoji = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(mf["risk_level"], "⚪")
+
+        mf_summary.append({
+            "Fund Name": mf["name"],
+            "Category": mf["category"].replace("_", " ").title(),
+            "Invested": f"₹{mf['invested_amount']:,.0f}",
+            "Current": f"₹{mf['current_value']:,.0f}",
+            "P&L": f"₹{mf['pnl']:,.0f}",
+            "P&L %": f"{mf['pnl_percent']:.2f}%",
+            "Sentiment": f"{sentiment_emoji} {mf['overall_sentiment'].replace('_', ' ').title()}",
+            "Risk": f"{risk_emoji} {mf['risk_level']}",
+            "Bullish": mf["bullish_count"],
+            "Bearish": mf["bearish_count"],
+        })
+
+    df = pd.DataFrame(mf_summary)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # Detailed analysis for each fund
+    st.subheader("📊 Underlying Stocks Sentiment")
+
+    for mf in analyzed_mf:
+        with st.expander(f"📁 {mf['name']} ({mf['underlying_count']} stocks)", expanded=False):
+            # Fund metrics
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Stocks Tracked", mf["underlying_count"])
+            col2.metric("Bullish", mf["bullish_count"], delta_color="off")
+            col3.metric("Bearish", mf["bearish_count"], delta_color="off")
+            col4.metric("Neutral", mf["neutral_count"], delta_color="off")
+            col5.metric("Not Discussed", mf["not_discussed_count"], delta_color="off")
+
+            # Underlying stocks table
+            underlying_df = pd.DataFrame(mf["underlying_analysis"])
+
+            # Add emoji to sentiment
+            def format_sentiment(s):
+                if s == "bullish":
+                    return "🟢 Bullish"
+                elif s == "bearish":
+                    return "🔴 Bearish"
+                elif s == "not_discussed":
+                    return "⚪ Not Discussed"
+                else:
+                    return "🟡 Neutral"
+
+            underlying_df["Sentiment"] = underlying_df["sentiment"].apply(format_sentiment)
+            underlying_df = underlying_df.rename(columns={
+                "stock": "Stock",
+                "mentions": "Reddit Mentions"
+            })
+
+            st.dataframe(
+                underlying_df[["Stock", "Sentiment", "Reddit Mentions"]],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # Assessment
+            if mf["bearish_count"] > mf["bullish_count"]:
+                st.warning(f"⚠️ More bearish stocks ({mf['bearish_count']}) than bullish ({mf['bullish_count']})")
+            elif mf["bullish_count"] > mf["bearish_count"]:
+                st.success(f"✅ More bullish stocks ({mf['bullish_count']}) than bearish ({mf['bearish_count']})")
+
+            # Delete button
+            if st.button(f"🗑️ Remove {mf['name']}", key=f"del_{mf['name']}"):
+                remove_mf_holding(mf["name"])
+                st.success(f"Removed {mf['name']}")
+                st.rerun()
+
+    # Clear all button
+    st.markdown("---")
+    if st.button("🗑️ Clear All MF Holdings"):
+        save_mf_portfolio([])
+        st.success("All MF holdings cleared!")
+        st.rerun()
 
 
 def main():
     """Main portfolio analysis page."""
-    st.write("DEBUG 1: Starting main()")
-
-    try:
-        render_header()
-        st.write("DEBUG 2: Header rendered")
-    except Exception as e:
-        st.error(f"Error rendering header: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return
+    render_header()
 
     # Check Groww API configuration
-    try:
-        client = GrowwClient()
-        st.write(f"DEBUG 3: GrowwClient created, configured={client.is_configured()}")
-    except Exception as e:
-        st.error(f"Error creating GrowwClient: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return
+    client = GrowwClient()
 
     if not client.is_configured():
         st.warning("""
@@ -372,20 +465,10 @@ def main():
 
         Get credentials from: https://groww.in/trade-api
         """)
-
-        # Show manual portfolio option
         st.info("You can still use manual portfolio entry below.")
 
     # Get latest report
-    try:
-        available_dates = get_available_dates()
-        st.write(f"DEBUG 4: Got {len(available_dates) if available_dates else 0} available dates")
-    except Exception as e:
-        st.error(f"Error getting available dates: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return
-
+    available_dates = get_available_dates()
     if not available_dates:
         st.error("No analysis reports found. Run the analyzer first: `python main.py`")
         return
@@ -393,22 +476,15 @@ def main():
     latest_date = available_dates[0]
     report = get_report_for_date(latest_date)
     report_content = report.get("content", "") if report else ""
-    st.write(f"DEBUG 5: Report loaded, content length={len(report_content)}")
 
     st.caption(f"📅 Using report from: {latest_date.strftime('%B %d, %Y')}")
-
-    st.write("DEBUG 6: About to create tabs")
 
     # Tabs for different views
     tab1, tab2, tab3 = st.tabs(["📊 Equity Holdings", "📈 Mutual Funds", "⚙️ Manual Entry"])
 
-    st.write("DEBUG 7: Tabs created")
-
     with tab1:
-        st.write("DEBUG 8: Inside tab1")
         st.subheader("Equity Holdings vs Reddit Sentiment")
 
-        # Debug: Show configuration status
         if not client.is_configured():
             st.error("""
             **Groww API credentials not found.**
@@ -423,35 +499,19 @@ def main():
             """)
 
         # Fetch holdings
-        st.write("DEBUG 9: About to fetch holdings")
         with st.spinner("Fetching portfolio from Groww..."):
             try:
                 holdings = client.get_holdings_with_prices()
-                st.write(f"DEBUG 10: Got {len(holdings) if holdings else 0} holdings")
 
                 if holdings:
                     # Get summary
-                    st.write("DEBUG 11: About to get portfolio summary")
-                    try:
-                        summary = get_portfolio_summary(holdings)
-                        st.write(f"DEBUG 12: Summary: {summary}")
-                        render_portfolio_summary(summary)
-                        st.write("DEBUG 13: Portfolio summary rendered")
-                    except Exception as e:
-                        st.error(f"Error rendering portfolio summary: {e}")
-                        import traceback
-                        st.code(traceback.format_exc())
+                    summary = get_portfolio_summary(holdings)
+                    render_portfolio_summary(summary)
 
                     st.markdown("---")
 
                     # Analyze against sentiment
-                    try:
-                        analyzed = analyze_holdings_against_sentiment(holdings, report_content)
-                    except Exception as e:
-                        st.error(f"Error analyzing holdings: {e}")
-                        import traceback
-                        st.code(traceback.format_exc())
-                        analyzed = []
+                    analyzed = analyze_holdings_against_sentiment(holdings, report_content)
 
                     if analyzed:
                         # Layout
@@ -459,31 +519,16 @@ def main():
 
                         with col1:
                             st.subheader("Holdings Analysis")
-                            try:
-                                render_holdings_table(analyzed)
-                            except Exception as e:
-                                st.error(f"Error rendering holdings table: {e}")
-                                import traceback
-                                st.code(traceback.format_exc())
+                            render_holdings_table(analyzed)
 
                         with col2:
                             st.subheader("Sentiment Split")
-                            try:
-                                render_sentiment_chart(analyzed)
-                            except Exception as e:
-                                st.error(f"Error rendering sentiment chart: {e}")
-                                import traceback
-                                st.code(traceback.format_exc())
+                            render_sentiment_chart(analyzed)
 
                         st.markdown("---")
 
                         # Risk alerts
-                        try:
-                            render_risk_alerts(analyzed)
-                        except Exception as e:
-                            st.error(f"Error rendering risk alerts: {e}")
-                            import traceback
-                            st.code(traceback.format_exc())
+                        render_risk_alerts(analyzed)
 
                 else:
                     st.info("No holdings found in your Groww account, or API connection failed.")
@@ -497,8 +542,6 @@ def main():
                 st.write("Please check your Groww API credentials.")
             except Exception as e:
                 st.error(f"Error fetching portfolio: {e}")
-                import traceback
-                st.code(traceback.format_exc())
                 st.write("Try the manual entry option instead.")
 
     with tab2:
