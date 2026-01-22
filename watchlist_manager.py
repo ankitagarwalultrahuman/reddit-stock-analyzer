@@ -32,6 +32,12 @@ NIFTY50_STOCKS = [
     "TECHM", "TITAN", "TRENT", "ULTRACEMCO", "WIPRO",
 ]
 
+# Mapping for tickers with special characters (yfinance format)
+TICKER_YFINANCE_MAP = {
+    "BAJAJ-AUTO": "BAJAJ-AUTO",
+    "M&M": "M&M",
+}
+
 # =============================================================================
 # NIFTY NEXT 50 STOCKS (NIFTY100 = NIFTY50 + NIFTY NEXT 50)
 # =============================================================================

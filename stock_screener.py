@@ -171,6 +171,44 @@ def filter_technical_bearish(signals: TechnicalSignals) -> tuple[bool, str]:
 # =============================================================================
 
 STRATEGIES = {
+    # === SINGLE FILTER STRATEGIES (Always return results) ===
+    "rsi_oversold": ScreenerStrategy(
+        name="RSI Oversold (< 35)",
+        description="Stocks with RSI below 35 - potentially oversold",
+        filters=[filter_rsi_oversold],
+    ),
+    "rsi_overbought": ScreenerStrategy(
+        name="RSI Overbought (> 65)",
+        description="Stocks with RSI above 65 - potentially overbought",
+        filters=[filter_rsi_overbought],
+    ),
+    "macd_bullish": ScreenerStrategy(
+        name="MACD Bullish",
+        description="Stocks showing bullish MACD signal or crossover",
+        filters=[filter_macd_bullish],
+    ),
+    "macd_bearish": ScreenerStrategy(
+        name="MACD Bearish",
+        description="Stocks showing bearish MACD signal",
+        filters=[filter_macd_bearish],
+    ),
+    "high_volume": ScreenerStrategy(
+        name="High Volume (> 1.3x avg)",
+        description="Stocks with above-average volume - institutional activity",
+        filters=[filter_high_volume],
+    ),
+    "near_support": ScreenerStrategy(
+        name="Near Support (Lower BB)",
+        description="Stocks near lower Bollinger Band - potential support",
+        filters=[filter_near_bollinger_lower],
+    ),
+    "near_resistance": ScreenerStrategy(
+        name="Near Resistance (Upper BB)",
+        description="Stocks near upper Bollinger Band - potential resistance",
+        filters=[filter_near_bollinger_upper],
+    ),
+
+    # === COMBO STRATEGIES (2 filters - min_matches=1 will show partial) ===
     "oversold_reversal": ScreenerStrategy(
         name="Oversold Reversal",
         description="RSI oversold + MACD turning bullish - potential bounce",
@@ -216,6 +254,13 @@ STRATEGIES = {
         description="Low volatility + RSI oversold + bullish MA trend",
         filters=[filter_low_volatility, filter_rsi_oversold, filter_ma_trend_bullish],
     ),
+
+    # === MARKET SCAN (show everything with metrics) ===
+    "full_scan": ScreenerStrategy(
+        name="Full Market Scan",
+        description="Show all stocks with their technical metrics (no filter)",
+        filters=[],  # Empty = show all
+    ),
 }
 
 
@@ -233,16 +278,17 @@ def get_strategy(name: str) -> Optional[ScreenerStrategy]:
 # SCREENING ENGINE
 # =============================================================================
 
-def scan_stock(ticker: str, filters: list[Callable]) -> Optional[ScreenerResult]:
+def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) -> Optional[ScreenerResult]:
     """
     Scan a single stock against filters.
 
     Args:
         ticker: Stock ticker
         filters: List of filter functions
+        include_all: If True, return result even if no filters match (for full scan)
 
     Returns:
-        ScreenerResult if any filter matches, None otherwise
+        ScreenerResult if any filter matches (or include_all=True), None otherwise
     """
     try:
         # Fetch price data
@@ -261,6 +307,27 @@ def scan_stock(ticker: str, filters: list[Callable]) -> Optional[ScreenerResult]
             is_match, reason = filter_func(signals)
             if is_match:
                 matched.append(reason)
+
+        # If no filters provided (full scan) or include_all, return with metrics
+        if not filters or include_all:
+            # Add basic metrics as "matched" info for display
+            matched = [
+                f"RSI: {signals.rsi:.1f}" if signals.rsi else "RSI: N/A",
+                f"MACD: {signals.macd_trend}",
+                f"Bias: {signals.technical_bias}",
+            ]
+            return ScreenerResult(
+                ticker=ticker,
+                current_price=signals.current_price,
+                matched_criteria=matched,
+                score=signals.technical_score or 50,  # Use tech score for sorting
+                signals=signals,
+                rsi=signals.rsi,
+                macd_trend=signals.macd_trend,
+                ma_trend=signals.ma_trend,
+                volume_signal=signals.volume_signal,
+                technical_bias=signals.technical_bias,
+            )
 
         if not matched:
             return None
@@ -363,10 +430,14 @@ def scan_stocks(
         List of ScreenerResult for matching stocks
     """
     # Get filters
+    include_all = False
     if strategy_name:
         strategy = get_strategy(strategy_name)
         if strategy:
             filters = strategy.filters
+            # Full scan strategy has empty filters
+            if not filters:
+                include_all = True
         else:
             return []
     elif custom_filters:
@@ -377,14 +448,16 @@ def scan_stocks(
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_ticker = {
-            executor.submit(scan_stock, ticker, filters): ticker
+            executor.submit(scan_stock, ticker, filters, include_all): ticker
             for ticker in stocks
         }
 
         for future in concurrent.futures.as_completed(future_to_ticker):
             result = future.result()
-            if result and result.score >= min_matches:
-                results.append(result)
+            if result:
+                # For full scan, include all; otherwise check min_matches
+                if include_all or result.score >= min_matches:
+                    results.append(result)
 
     results.sort(key=lambda x: x.score, reverse=True)
     return results
@@ -460,5 +533,185 @@ def format_screener_results(results: list[ScreenerResult]) -> str:
         lines.append(f"   RSI: {r.rsi} | MACD: {r.macd_trend} | MA: {r.ma_trend}")
         lines.append(f"   Matched: {', '.join(r.matched_criteria)}")
         lines.append("")
+
+    return "\n".join(lines)
+
+
+# =============================================================================
+# COMPREHENSIVE STOCK COMPARISON WITH HISTORIC DATA
+# =============================================================================
+
+@dataclass
+class StockComparison:
+    """Comprehensive stock comparison with historic performance."""
+    ticker: str
+    current_price: float
+
+    # Price changes (from historic data)
+    change_1d: float = 0.0
+    change_5d: float = 0.0
+    change_20d: float = 0.0
+    change_60d: float = 0.0
+
+    # Technical indicators
+    rsi: Optional[float] = None
+    macd_trend: Optional[str] = None
+    ma_trend: Optional[str] = None
+    technical_score: int = 50
+    technical_bias: str = "neutral"
+
+    # Volatility
+    volatility: Optional[float] = None  # Annualized volatility %
+    atr_percent: Optional[float] = None
+
+    # Volume
+    volume_ratio: Optional[float] = None
+
+    # Performance metrics
+    sharpe_ratio: Optional[float] = None
+    max_drawdown: Optional[float] = None
+
+
+def get_stock_comparison(ticker: str) -> Optional[StockComparison]:
+    """
+    Get comprehensive comparison data for a single stock.
+
+    Uses historic price data for performance metrics.
+    """
+    try:
+        df = fetch_stock_history(ticker, days=70)  # Extra days for calculations
+        if df.empty or len(df) < 20:
+            return None
+
+        from stock_history import calculate_performance_metrics
+        signals = get_technical_analysis(df, ticker)
+        metrics = calculate_performance_metrics(df)
+
+        # Calculate price changes at different intervals
+        close = df['Close']
+        current = close.iloc[-1]
+
+        change_1d = ((current / close.iloc[-2]) - 1) * 100 if len(close) > 1 else 0
+        change_5d = ((current / close.iloc[-5]) - 1) * 100 if len(close) > 5 else 0
+        change_20d = ((current / close.iloc[-20]) - 1) * 100 if len(close) > 20 else 0
+        change_60d = ((current / close.iloc[0]) - 1) * 100 if len(close) > 0 else 0
+
+        return StockComparison(
+            ticker=ticker,
+            current_price=round(current, 2),
+            change_1d=round(change_1d, 2),
+            change_5d=round(change_5d, 2),
+            change_20d=round(change_20d, 2),
+            change_60d=round(change_60d, 2),
+            rsi=signals.rsi,
+            macd_trend=signals.macd_trend,
+            ma_trend=signals.ma_trend,
+            technical_score=signals.technical_score or 50,
+            technical_bias=signals.technical_bias or "neutral",
+            volatility=metrics.get('volatility'),
+            atr_percent=signals.atr_percent,
+            volume_ratio=signals.volume_ratio,
+            sharpe_ratio=metrics.get('sharpe_ratio'),
+            max_drawdown=metrics.get('max_drawdown'),
+        )
+
+    except Exception as e:
+        print(f"Error comparing {ticker}: {e}")
+        return None
+
+
+def compare_stocks(
+    stocks: list[str],
+    sort_by: str = "change_5d",
+    max_workers: int = 5,
+) -> list[StockComparison]:
+    """
+    Compare multiple stocks using historic data.
+
+    Args:
+        stocks: List of stock tickers
+        sort_by: Sort field (change_1d, change_5d, change_20d, rsi, technical_score)
+        max_workers: Parallel workers
+
+    Returns:
+        List of StockComparison sorted by specified field
+    """
+    results = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ticker = {
+            executor.submit(get_stock_comparison, ticker): ticker
+            for ticker in stocks
+        }
+
+        for future in concurrent.futures.as_completed(future_to_ticker):
+            result = future.result()
+            if result:
+                results.append(result)
+
+    # Sort by specified field
+    sort_field_map = {
+        "change_1d": lambda x: x.change_1d,
+        "change_5d": lambda x: x.change_5d,
+        "change_20d": lambda x: x.change_20d,
+        "change_60d": lambda x: x.change_60d,
+        "rsi": lambda x: x.rsi or 50,
+        "technical_score": lambda x: x.technical_score,
+        "volatility": lambda x: x.volatility or 0,
+    }
+
+    sort_func = sort_field_map.get(sort_by, sort_field_map["change_5d"])
+    results.sort(key=sort_func, reverse=True)
+
+    return results
+
+
+def get_top_gainers(watchlist: str = "NIFTY50", period: str = "5d", limit: int = 10) -> list[StockComparison]:
+    """Get top gaining stocks from a watchlist."""
+    from watchlist_manager import get_stocks_from_watchlist, NIFTY50_STOCKS
+
+    stocks = get_stocks_from_watchlist(watchlist) or NIFTY50_STOCKS
+    sort_by = f"change_{period}" if period in ["1d", "5d", "20d", "60d"] else "change_5d"
+
+    results = compare_stocks(stocks, sort_by=sort_by)
+    return results[:limit]
+
+
+def get_top_losers(watchlist: str = "NIFTY50", period: str = "5d", limit: int = 10) -> list[StockComparison]:
+    """Get top losing stocks from a watchlist."""
+    from watchlist_manager import get_stocks_from_watchlist, NIFTY50_STOCKS
+
+    stocks = get_stocks_from_watchlist(watchlist) or NIFTY50_STOCKS
+    sort_by = f"change_{period}" if period in ["1d", "5d", "20d", "60d"] else "change_5d"
+
+    results = compare_stocks(stocks, sort_by=sort_by)
+    results.reverse()  # Worst performers first
+    return results[:limit]
+
+
+def get_most_volatile(watchlist: str = "NIFTY50", limit: int = 10) -> list[StockComparison]:
+    """Get most volatile stocks from a watchlist."""
+    from watchlist_manager import get_stocks_from_watchlist, NIFTY50_STOCKS
+
+    stocks = get_stocks_from_watchlist(watchlist) or NIFTY50_STOCKS
+    results = compare_stocks(stocks, sort_by="volatility")
+    return results[:limit]
+
+
+def format_comparison_table(comparisons: list[StockComparison]) -> str:
+    """Format stock comparisons as a text table."""
+    if not comparisons:
+        return "No data available."
+
+    lines = [
+        f"{'Ticker':<12} {'Price':>10} {'1D%':>8} {'5D%':>8} {'20D%':>8} {'RSI':>6} {'MACD':<10} {'Bias':<10}",
+        "-" * 85,
+    ]
+
+    for c in comparisons:
+        lines.append(
+            f"{c.ticker:<12} {c.current_price:>10.2f} {c.change_1d:>+7.2f}% {c.change_5d:>+7.2f}% "
+            f"{c.change_20d:>+7.2f}% {c.rsi or 0:>6.1f} {c.macd_trend or 'N/A':<10} {c.technical_bias:<10}"
+        )
 
     return "\n".join(lines)
