@@ -43,6 +43,7 @@ class GrowwClient:
     def __init__(self, api_token: str = None, api_secret: str = None):
         self.api_token = api_token or GROWW_API_TOKEN
         self.api_secret = api_secret or GROWW_API_SECRET
+        self.access_token = None
         self.session = requests.Session()
         self._setup_headers()
 
@@ -56,7 +57,25 @@ class GrowwClient:
 
     def is_configured(self) -> bool:
         """Check if API credentials are configured."""
-        return bool(self.api_token)
+        return bool(self.api_token and self.api_secret)
+
+    def _get_access_token(self) -> str:
+        """Generate fresh access token using API key and secret."""
+        if not self.api_token or not self.api_secret:
+            raise ValueError("Both GROWW_API_TOKEN and GROWW_API_SECRET required")
+
+        try:
+            from growwapi import GrowwAPI
+            # Generate fresh access token (expires daily at 6 AM IST)
+            access_token = GrowwAPI.get_access_token(
+                api_key=self.api_token,
+                secret=self.api_secret
+            )
+            self.access_token = access_token
+            return access_token
+        except Exception as e:
+            print(f"Failed to generate access token: {e}")
+            raise
 
     def get_holdings(self) -> list[Holding]:
         """
@@ -66,40 +85,39 @@ class GrowwClient:
             List of Holding objects with portfolio data.
         """
         if not self.is_configured():
-            raise ValueError("Groww API token not configured. Set GROWW_API_TOKEN in .env")
+            raise ValueError("Groww API not configured. Set GROWW_API_TOKEN and GROWW_API_SECRET in .env")
 
         try:
-            # Try using the growwapi SDK first
-            try:
-                from growwapi import GrowwAPI
-                groww = GrowwAPI(self.api_token)
-                response = groww.get_holdings_for_user(timeout=10)
+            from growwapi import GrowwAPI
 
-                holdings = []
-                for h in response.get("holdings", []):
-                    holding = Holding(
-                        isin=h.get("isin", ""),
-                        trading_symbol=h.get("trading_symbol", h.get("tradingSymbol", "")),
-                        quantity=float(h.get("quantity", 0)),
-                        average_price=float(h.get("average_price", h.get("averagePrice", 0))),
-                    )
-                    holding.invested_value = holding.quantity * holding.average_price
-                    holdings.append(holding)
+            # Generate fresh access token
+            access_token = self._get_access_token()
 
-                return holdings
+            # Initialize client with fresh token
+            groww = GrowwAPI(access_token)
+            response = groww.get_holdings_for_user(timeout=10)
 
-            except ImportError:
-                # Fallback to direct API call
-                return self._get_holdings_direct()
+            holdings = []
+            for h in response.get("holdings", []):
+                holding = Holding(
+                    isin=h.get("isin", ""),
+                    trading_symbol=h.get("trading_symbol", h.get("tradingSymbol", "")),
+                    quantity=float(h.get("quantity", 0)),
+                    average_price=float(h.get("average_price", h.get("averagePrice", 0))),
+                )
+                holding.invested_value = holding.quantity * holding.average_price
+                holdings.append(holding)
 
+            return holdings
+
+        except ImportError:
+            print("growwapi package not installed. Run: pip install growwapi")
+            return []
         except Exception as e:
             error_msg = str(e).lower()
             if "forbidden" in error_msg or "401" in error_msg or "403" in error_msg:
-                print(f"Groww API access denied. This could be due to:")
-                print("  1. IP restrictions on your API token")
-                print("  2. Token permissions not enabled for portfolio access")
-                print("  3. Token expired - try regenerating from Groww Trade API")
-                print("\nUsing manual portfolio entry instead.")
+                print(f"Groww API access denied: {e}")
+                print("Check your GROWW_API_TOKEN and GROWW_API_SECRET in .env")
             else:
                 print(f"Error fetching holdings: {e}")
             return []
@@ -132,7 +150,7 @@ class GrowwClient:
 
     def get_ltp(self, trading_symbol: str, exchange: str = "NSE") -> Optional[float]:
         """
-        Get Last Traded Price for a symbol.
+        Get Last Traded Price for a symbol using get_quote.
 
         Args:
             trading_symbol: Stock symbol (e.g., "RELIANCE")
@@ -143,18 +161,35 @@ class GrowwClient:
         """
         try:
             from growwapi import GrowwAPI
-            groww = GrowwAPI(self.api_token)
-            ltp_data = groww.get_ltp(
+
+            # Use cached access token or generate new one
+            if not self.access_token:
+                self._get_access_token()
+
+            groww = GrowwAPI(self.access_token)
+
+            # Use get_quote which returns last_price
+            quote = groww.get_quote(
                 trading_symbol=trading_symbol,
-                exchange=exchange
+                exchange=exchange,
+                segment=groww.SEGMENT_CASH
             )
-            return float(ltp_data.get("ltp", 0))
-        except Exception:
+
+            if quote and "last_price" in quote:
+                return float(quote["last_price"])
+            return None
+        except Exception as e:
+            # Silently fail for LTP - not critical
             return None
 
     def get_holdings_with_prices(self) -> list[Holding]:
         """Fetch holdings and enrich with current prices."""
         holdings = self.get_holdings()
+
+        if not holdings:
+            return holdings
+
+        print(f"Fetching current prices for {len(holdings)} holdings...")
 
         for holding in holdings:
             try:
@@ -165,8 +200,8 @@ class GrowwClient:
                     holding.pnl = holding.current_value - holding.invested_value
                     if holding.invested_value > 0:
                         holding.pnl_percent = (holding.pnl / holding.invested_value) * 100
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  Could not get price for {holding.trading_symbol}: {e}")
 
         return holdings
 
