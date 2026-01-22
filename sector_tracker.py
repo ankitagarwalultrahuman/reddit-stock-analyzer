@@ -89,24 +89,24 @@ def analyze_stock_for_sector(ticker: str) -> Optional[StockPerformance]:
 
         # Calculate returns
         close = df['Close']
-        current = close.iloc[-1]
+        current = float(close.iloc[-1])  # Convert to native Python float
 
-        return_1d = ((current / close.iloc[-2]) - 1) * 100 if len(close) > 1 else 0
-        return_5d = ((current / close.iloc[-5]) - 1) * 100 if len(close) > 5 else 0
-        return_20d = ((current / close.iloc[-20]) - 1) * 100 if len(close) > 20 else 0
+        return_1d = ((current / float(close.iloc[-2])) - 1) * 100 if len(close) > 1 else 0
+        return_5d = ((current / float(close.iloc[-5])) - 1) * 100 if len(close) > 5 else 0
+        return_20d = ((current / float(close.iloc[-20])) - 1) * 100 if len(close) > 20 else 0
 
         return StockPerformance(
             ticker=ticker,
-            current_price=current,
-            return_1d=round(return_1d, 2),
-            return_5d=round(return_5d, 2),
-            return_20d=round(return_20d, 2),
-            rsi=signals.rsi,
+            current_price=round(current, 2),
+            return_1d=round(float(return_1d), 2),
+            return_5d=round(float(return_5d), 2),
+            return_20d=round(float(return_20d), 2),
+            rsi=float(signals.rsi) if signals.rsi else None,
             technical_bias=signals.technical_bias or "neutral",
         )
 
     except Exception as e:
-        print(f"Error analyzing {ticker}: {e}")
+        # Silently skip failed tickers
         return None
 
 
@@ -183,10 +183,10 @@ def analyze_sector(sector: str, max_workers: int = 5) -> SectorMetrics:
     else:
         momentum_trend = "neutral"
 
-    # Sort for top/bottom performers
+    # Sort for top/bottom performers (ensure native Python types)
     sorted_by_return = sorted(performances, key=lambda x: x.return_5d, reverse=True)
-    top_stocks = [(p.ticker, p.return_5d) for p in sorted_by_return[:3]]
-    bottom_stocks = [(p.ticker, p.return_5d) for p in sorted_by_return[-3:]]
+    top_stocks = [(p.ticker, float(p.return_5d)) for p in sorted_by_return[:3]]
+    bottom_stocks = [(p.ticker, float(p.return_5d)) for p in sorted_by_return[-3:]]
 
     return SectorMetrics(
         sector=sector,
@@ -280,12 +280,12 @@ def get_sector_rotation_signals(sector_metrics: list[SectorMetrics]) -> dict:
         )
 
     return {
-        "gaining_momentum": [(s.sector, s.momentum_score, s.avg_return_5d) for s in gaining],
-        "losing_momentum": [(s.sector, s.momentum_score, s.avg_return_5d) for s in losing],
-        "top_performing": [(s.sector, s.avg_return_5d) for s in top_performing],
-        "worst_performing": [(s.sector, s.avg_return_5d) for s in worst_performing],
-        "oversold_sectors": [(s.sector, s.avg_rsi) for s in oversold],
-        "overbought_sectors": [(s.sector, s.avg_rsi) for s in overbought],
+        "gaining_momentum": [(s.sector, float(s.momentum_score), float(s.avg_return_5d)) for s in gaining],
+        "losing_momentum": [(s.sector, float(s.momentum_score), float(s.avg_return_5d)) for s in losing],
+        "top_performing": [(s.sector, float(s.avg_return_5d)) for s in top_performing],
+        "worst_performing": [(s.sector, float(s.avg_return_5d)) for s in worst_performing],
+        "oversold_sectors": [(s.sector, float(s.avg_rsi)) for s in oversold],
+        "overbought_sectors": [(s.sector, float(s.avg_rsi)) for s in overbought],
         "recommendations": recommendations,
         "timestamp": datetime.now().isoformat(),
     }
