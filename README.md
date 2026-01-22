@@ -133,9 +133,28 @@ python /path/to/reddit-stock-analyzer/main.py
 
 ## Portfolio Integration
 
-Match your holdings against Reddit sentiment:
+Match your holdings against Reddit sentiment with automatic Groww sync!
 
-### Option 1: CSV Import (Groww/Zerodha)
+### Option 1: Groww API (Recommended)
+
+Automatically sync your Groww portfolio:
+
+1. Get API credentials from [Groww Trade API](https://groww.in/trade-api)
+2. Add to `.env`:
+```
+GROWW_API_TOKEN=your_jwt_token
+GROWW_API_SECRET=your_api_secret
+```
+3. Open the dashboard → Portfolio Analysis page
+
+**Features:**
+- Real-time portfolio sync
+- P&L tracking with current prices
+- Sentiment comparison for each holding
+- Risk alerts for bearish stocks
+- Action recommendations (HOLD, REVIEW, EXIT)
+
+### Option 2: CSV Import
 
 1. Export portfolio from your broker as CSV
 2. Use the portfolio analyzer:
@@ -147,24 +166,16 @@ holdings = import_from_csv("my_portfolio.csv")
 analysis = analyze_portfolio_against_sentiment(report_content)
 ```
 
-### Option 2: Manual Entry
+### Option 3: Manual Entry (Dashboard)
 
-```python
-from portfolio_analyzer import add_holding
+Use the Portfolio Analysis page → Manual Entry tab to add holdings directly.
 
-add_holding("RELIANCE", quantity=10, avg_price=1450.00)
-add_holding("TCS", quantity=5, avg_price=3800.00)
-```
+### Mutual Fund Analysis
 
-### Option 3: Zerodha Kite API
-
-For automated sync, configure Kite Connect credentials in `.env`:
-```
-KITE_API_KEY=your_api_key
-KITE_API_SECRET=your_api_secret
-```
-
-Note: Requires Kite Connect subscription (₹2000/month)
+Enter your mutual fund name to see sentiment analysis of underlying stocks:
+- Identifies which underlying stocks are being discussed
+- Shows bullish/bearish sentiment distribution
+- Helps understand MF performance drivers
 
 ## Deployment
 
