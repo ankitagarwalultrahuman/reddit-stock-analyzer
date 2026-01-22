@@ -37,8 +37,8 @@ def get_secret(key: str, default: str = None) -> Optional[str]:
 
 
 # Groww API Configuration
-GROWW_API_TOKEN = get_secret("GROWW_API_TOKEN")
-GROWW_API_SECRET = get_secret("GROWW_API_SECRET")
+# Note: Credentials are loaded lazily in GrowwClient.__init__() to ensure
+# Streamlit secrets are available (they aren't accessible at import time)
 GROWW_BASE_URL = "https://api.groww.in"
 
 
@@ -62,8 +62,10 @@ class GrowwClient:
     """Groww API client for fetching portfolio data."""
 
     def __init__(self, api_token: str = None, api_secret: str = None):
-        self.api_token = api_token or GROWW_API_TOKEN
-        self.api_secret = api_secret or GROWW_API_SECRET
+        # Load credentials lazily at runtime (not at import time)
+        # This ensures Streamlit secrets are available when running on Streamlit Cloud
+        self.api_token = api_token or get_secret("GROWW_API_TOKEN")
+        self.api_secret = api_secret or get_secret("GROWW_API_SECRET")
         self.access_token = None
         self.session = requests.Session()
         self._setup_headers()
