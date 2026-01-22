@@ -156,6 +156,7 @@ def main():
     # Debug expander - helps diagnose issues
     with st.expander("🔧 Diagnostics (click if data shows zeros)"):
         from stock_history import clear_all_cache, get_cache_stats, fetch_stock_history
+        from sector_tracker import analyze_sector, analyze_stock_for_sector
 
         col_d1, col_d2 = st.columns(2)
 
@@ -180,6 +181,35 @@ def main():
             except Exception as e:
                 st.error(f"❌ Fetch error: {e}")
 
+        st.markdown("---")
+        st.markdown("**Test Single Stock Analysis:**")
+        if st.button("Test HDFCBANK Analysis"):
+            try:
+                result = analyze_stock_for_sector("HDFCBANK")
+                if result:
+                    st.success(f"✅ HDFCBANK: Price=₹{result.current_price}, 1D={result.return_1d:+.2f}%, 5D={result.return_5d:+.2f}%, RSI={result.rsi:.1f}")
+                else:
+                    st.error("❌ HDFCBANK analysis returned None")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+
+        st.markdown("**Test Banking Sector (Sequential):**")
+        if st.button("Test Banking Sector"):
+            try:
+                with st.spinner("Analyzing Banking sector..."):
+                    result = analyze_sector("Banking", max_workers=1, use_parallel=False)
+                st.write(f"- Stocks analyzed: {result.stock_count}")
+                st.write(f"- Momentum: {result.momentum_score}")
+                st.write(f"- 5D Return: {result.avg_return_5d:+.2f}%")
+                st.write(f"- Bullish: {result.bullish_count}, Bearish: {result.bearish_count}")
+                if result.momentum_score == 50 and result.avg_return_5d == 0:
+                    st.error("❌ Still getting default values - check logs below")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
+        st.markdown("---")
         if st.button("🗑️ Clear ALL Cache & Reload", type="primary"):
             clear_all_cache()
             st.cache_data.clear()

@@ -81,19 +81,35 @@ def analyze_stock_for_sector(ticker: str) -> Optional[StockPerformance]:
     """Analyze a single stock for sector analysis."""
     try:
         df = fetch_stock_history(ticker, days=60)
-        if df.empty or len(df) < 20:
+        if df.empty:
+            print(f"[SECTOR] {ticker}: Empty dataframe")
+            return None
+        if len(df) < 20:
+            print(f"[SECTOR] {ticker}: Only {len(df)} rows (need 20+)")
             return None
 
         # Get technical analysis
         signals = get_technical_analysis(df, ticker)
 
-        # Calculate returns
+        # Calculate returns - use 'Close' column
+        if 'Close' not in df.columns:
+            print(f"[SECTOR] {ticker}: No 'Close' column. Columns: {df.columns.tolist()}")
+            return None
+
         close = df['Close']
         current = float(close.iloc[-1])  # Convert to native Python float
 
-        return_1d = ((current / float(close.iloc[-2])) - 1) * 100 if len(close) > 1 else 0
-        return_5d = ((current / float(close.iloc[-5])) - 1) * 100 if len(close) > 5 else 0
-        return_20d = ((current / float(close.iloc[-20])) - 1) * 100 if len(close) > 20 else 0
+        # Safe return calculations
+        return_1d = 0.0
+        return_5d = 0.0
+        return_20d = 0.0
+
+        if len(close) > 1 and float(close.iloc[-2]) != 0:
+            return_1d = ((current / float(close.iloc[-2])) - 1) * 100
+        if len(close) > 5 and float(close.iloc[-5]) != 0:
+            return_5d = ((current / float(close.iloc[-5])) - 1) * 100
+        if len(close) > 20 and float(close.iloc[-20]) != 0:
+            return_20d = ((current / float(close.iloc[-20])) - 1) * 100
 
         return StockPerformance(
             ticker=ticker,
@@ -106,39 +122,58 @@ def analyze_stock_for_sector(ticker: str) -> Optional[StockPerformance]:
         )
 
     except Exception as e:
-        # Silently skip failed tickers
+        print(f"[SECTOR] {ticker}: Exception - {type(e).__name__}: {e}")
         return None
 
 
-def analyze_sector(sector: str, max_workers: int = 5) -> SectorMetrics:
+def analyze_sector(sector: str, max_workers: int = 5, use_parallel: bool = True) -> SectorMetrics:
     """
     Analyze all stocks in a sector.
 
     Args:
         sector: Sector name
         max_workers: Max parallel workers
+        use_parallel: Use parallel processing (set False for debugging)
 
     Returns:
         SectorMetrics object with aggregated data
     """
     stocks = get_sector_stocks(sector)
     if not stocks:
+        print(f"[SECTOR] {sector}: No stocks found in watchlist")
         return SectorMetrics(sector=sector, stock_count=0)
 
-    # Analyze stocks in parallel
-    performances = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_ticker = {
-            executor.submit(analyze_stock_for_sector, ticker): ticker
-            for ticker in stocks
-        }
+    print(f"[SECTOR] {sector}: Analyzing {len(stocks)} stocks...")
 
-        for future in concurrent.futures.as_completed(future_to_ticker):
-            result = future.result()
+    performances = []
+
+    if use_parallel:
+        # Analyze stocks in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_ticker = {
+                executor.submit(analyze_stock_for_sector, ticker): ticker
+                for ticker in stocks
+            }
+
+            for future in concurrent.futures.as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    result = future.result(timeout=30)
+                    if result:
+                        performances.append(result)
+                except Exception as e:
+                    print(f"[SECTOR] {ticker}: Future failed - {e}")
+    else:
+        # Sequential processing (fallback for debugging)
+        for ticker in stocks:
+            result = analyze_stock_for_sector(ticker)
             if result:
                 performances.append(result)
 
+    print(f"[SECTOR] {sector}: {len(performances)}/{len(stocks)} stocks analyzed successfully")
+
     if not performances:
+        print(f"[SECTOR] {sector}: WARNING - No stocks could be analyzed!")
         return SectorMetrics(sector=sector, stock_count=len(stocks))
 
     # Calculate averages
