@@ -605,7 +605,7 @@ def render_header():
     """, unsafe_allow_html=True)
 
 
-def render_todays_actions(report: dict):
+def render_todays_actions(report: dict, session_key: str = "default"):
     """Render the Today's Actions section with 4-column layout."""
     content = report.get("content", "")
     actions = generate_todays_actions(content)
@@ -711,7 +711,7 @@ def render_todays_actions(report: dict):
         """, unsafe_allow_html=True)
 
 
-def render_charts_section(report: dict):
+def render_charts_section(report: dict, session_key: str = "default"):
     """Render the charts section with bar and donut charts."""
     content = report.get("content", "")
 
@@ -765,7 +765,7 @@ def render_charts_section(report: dict):
                 yaxis=dict(showgrid=False),
             )
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"bar_chart_{session_key}")
         else:
             st.info("No stock data available for chart")
 
@@ -808,14 +808,14 @@ def render_charts_section(report: dict):
                     paper_bgcolor="white",
                 )
 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"pie_chart_{session_key}")
             else:
                 st.info("No sentiment data available")
         else:
             st.info("No insights data available for chart")
 
 
-def render_metric_cards(report: dict):
+def render_metric_cards(report: dict, session_key: str = "default"):
     """Render metric cards row."""
     metadata = report.get("metadata", {})
     timestamp = report.get("timestamp")
@@ -841,7 +841,7 @@ def render_metric_cards(report: dict):
             """, unsafe_allow_html=True)
 
 
-def render_news_highlights(report: dict, portfolio_stocks: list = None):
+def render_news_highlights(report: dict, portfolio_stocks: list = None, session_key: str = "default"):
     """Render the Financial News Highlights section."""
     if not NEWS_AVAILABLE or not NEWS_ENABLED:
         return
@@ -937,7 +937,7 @@ def render_news_highlights(report: dict, portfolio_stocks: list = None):
                 st.markdown(f"- {alert}")
 
 
-def render_detailed_sections(report: dict):
+def render_detailed_sections(report: dict, session_key: str = "default"):
     """Render detailed report sections in card-based layout."""
     content = report.get("content", "")
     sections = parse_report_sections(content)
@@ -946,31 +946,31 @@ def render_detailed_sections(report: dict):
 
     # Key Insights section
     if sections["key_insights"]:
-        with st.expander("🎯 Key Insights", expanded=True):
+        with st.expander("🎯 Key Insights", expanded=True, key=f"exp_insights_{session_key}"):
             st.markdown(colorize_sentiment(sections["key_insights"]), unsafe_allow_html=True)
 
     # Most Discussed Stocks section
     if sections["most_discussed"]:
-        with st.expander("📈 Most Discussed Stocks", expanded=True):
+        with st.expander("📈 Most Discussed Stocks", expanded=True, key=f"exp_discussed_{session_key}"):
             st.markdown(colorize_sentiment(sections["most_discussed"]), unsafe_allow_html=True)
 
     # Sector Trends section
     if sections["sector_trends"]:
-        with st.expander("🏭 Sector Trends", expanded=False):
+        with st.expander("🏭 Sector Trends", expanded=False, key=f"exp_sectors_{session_key}"):
             st.markdown(colorize_sentiment(sections["sector_trends"]), unsafe_allow_html=True)
 
     # Market Sentiment section
     if sections["sentiment_summary"]:
-        with st.expander("📊 Market Sentiment Summary", expanded=False):
+        with st.expander("📊 Market Sentiment Summary", expanded=False, key=f"exp_sentiment_{session_key}"):
             st.markdown(colorize_sentiment(sections["sentiment_summary"]), unsafe_allow_html=True)
 
     # Caution Flags section
     if sections["caution_flags"]:
-        with st.expander("⚠️ Caution Flags", expanded=True):
+        with st.expander("⚠️ Caution Flags", expanded=True, key=f"exp_caution_{session_key}"):
             st.markdown(colorize_sentiment(sections["caution_flags"]), unsafe_allow_html=True)
 
 
-def render_weekly_summary():
+def render_weekly_summary(session_key: str = "default"):
     """Render the 7-day AI summary section (collapsed at bottom)."""
     available_dates = get_available_dates()
     if len(available_dates) == 0:
@@ -983,11 +983,11 @@ def render_weekly_summary():
 
     col1, col2 = st.columns([6, 1])
     with col2:
-        if st.button("🔄 Regenerate", key="regenerate_summary", help="Force refresh the weekly summary"):
+        if st.button("🔄 Regenerate", key=f"regenerate_summary_{session_key}", help="Force refresh the weekly summary"):
             st.cache_data.clear()
             st.rerun()
 
-    with st.expander("View Weekly Analysis", expanded=False):
+    with st.expander("View Weekly Analysis", expanded=False, key=f"exp_weekly_{session_key}"):
         with st.spinner("Generating weekly summary with AI..."):
             summary = cached_weekly_summary(dates_key)
 
@@ -1025,9 +1025,9 @@ def render_date_selector() -> tuple:
     return selected_date, report
 
 
-def render_raw_report(report: dict):
+def render_raw_report(report: dict, session_key: str = "default"):
     """Render raw report option."""
-    with st.expander("📝 View Raw Report"):
+    with st.expander("📝 View Raw Report", key=f"exp_raw_{session_key}"):
         st.text(report.get("content", ""))
 
 
@@ -1194,7 +1194,7 @@ def render_volume_changes_chart(changes: list):
         yaxis=dict(showgrid=False),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="volume_changes_chart")
 
 
 def render_new_removed_stocks(new_stocks: list, removed_stocks: list):
@@ -1363,14 +1363,14 @@ def main():
                     # Render regular report view
                     report = sessions_data.get("am" if key == SESSION_AM else "pm")
                     if report:
-                        render_report_view(report)
+                        render_report_view(report, session_key=key)
                     else:
                         st.error(f"Could not load {key} report")
     else:
         # Single report or legacy - show regular view
         report = get_report_for_date(selected_date)
         if report:
-            render_report_view(report)
+            render_report_view(report, session_key="legacy")
         else:
             st.error(f"Could not load report for {format_date_for_display(selected_date)}")
 
@@ -1383,20 +1383,20 @@ def main():
     )
 
 
-def render_report_view(report: dict):
+def render_report_view(report: dict, session_key: str = "default"):
     """Render the standard report view with all sections."""
     # Today's Actions section (prominent at top)
-    render_todays_actions(report)
+    render_todays_actions(report, session_key)
 
     st.markdown("---")
 
     # Charts row
-    render_charts_section(report)
+    render_charts_section(report, session_key)
 
     st.markdown("---")
 
     # Metrics row
-    render_metric_cards(report)
+    render_metric_cards(report, session_key)
 
     st.markdown("---")
 
@@ -1408,22 +1408,22 @@ def render_report_view(report: dict):
     except Exception:
         portfolio_tickers = None
 
-    render_news_highlights(report, portfolio_tickers)
+    render_news_highlights(report, portfolio_tickers, session_key)
 
     st.markdown("---")
 
     # Detailed sections
-    render_detailed_sections(report)
+    render_detailed_sections(report, session_key)
 
     st.markdown("---")
 
     # 7-Day Summary (collapsed at bottom)
-    render_weekly_summary()
+    render_weekly_summary(session_key)
 
     st.markdown("---")
 
     # Raw report
-    render_raw_report(report)
+    render_raw_report(report, session_key)
 
 
 if __name__ == "__main__":
