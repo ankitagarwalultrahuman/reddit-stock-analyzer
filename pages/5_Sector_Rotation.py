@@ -153,12 +153,47 @@ def main():
             st.cache_data.clear()
             st.rerun()
 
+    # Debug expander - helps diagnose issues
+    with st.expander("🔧 Diagnostics (click if data shows zeros)"):
+        from stock_history import clear_all_cache, get_cache_stats, fetch_stock_history
+
+        col_d1, col_d2 = st.columns(2)
+
+        with col_d1:
+            st.markdown("**Cache Status:**")
+            try:
+                stats = get_cache_stats()
+                st.write(f"- Total cached: {stats['total_entries']} stocks")
+                st.write(f"- Valid entries: {stats['valid_entries']}")
+                st.write(f"- Newest fetch: {stats['newest_fetch']}")
+            except Exception as e:
+                st.error(f"Cache error: {e}")
+
+        with col_d2:
+            st.markdown("**Test Stock Fetch:**")
+            try:
+                test_df = fetch_stock_history("RELIANCE", days=10)
+                if not test_df.empty:
+                    st.success(f"✅ RELIANCE: {len(test_df)} rows, Close: ₹{test_df['Close'].iloc[-1]:.2f}")
+                else:
+                    st.error("❌ RELIANCE fetch returned empty data")
+            except Exception as e:
+                st.error(f"❌ Fetch error: {e}")
+
+        if st.button("🗑️ Clear ALL Cache & Reload", type="primary"):
+            clear_all_cache()
+            st.cache_data.clear()
+            st.success("Cache cleared! Reloading...")
+            st.rerun()
+
     # Load data
     with st.spinner("Analyzing all sectors... This may take a minute."):
         try:
             metrics, signals = get_sector_analysis()
         except Exception as e:
             st.error(f"Error loading sector data: {e}")
+            import traceback
+            st.code(traceback.format_exc())
             return
 
     if not metrics:
