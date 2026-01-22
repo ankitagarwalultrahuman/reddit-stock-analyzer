@@ -399,29 +399,56 @@ def main():
 
                 if holdings:
                     # Get summary
-                    summary = get_portfolio_summary(holdings)
-                    render_portfolio_summary(summary)
+                    try:
+                        summary = get_portfolio_summary(holdings)
+                        render_portfolio_summary(summary)
+                    except Exception as e:
+                        st.error(f"Error rendering portfolio summary: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
 
                     st.markdown("---")
 
                     # Analyze against sentiment
-                    analyzed = analyze_holdings_against_sentiment(holdings, report_content)
+                    try:
+                        analyzed = analyze_holdings_against_sentiment(holdings, report_content)
+                    except Exception as e:
+                        st.error(f"Error analyzing holdings: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
+                        analyzed = []
 
-                    # Layout
-                    col1, col2 = st.columns([3, 1])
+                    if analyzed:
+                        # Layout
+                        col1, col2 = st.columns([3, 1])
 
-                    with col1:
-                        st.subheader("Holdings Analysis")
-                        render_holdings_table(analyzed)
+                        with col1:
+                            st.subheader("Holdings Analysis")
+                            try:
+                                render_holdings_table(analyzed)
+                            except Exception as e:
+                                st.error(f"Error rendering holdings table: {e}")
+                                import traceback
+                                st.code(traceback.format_exc())
 
-                    with col2:
-                        st.subheader("Sentiment Split")
-                        render_sentiment_chart(analyzed)
+                        with col2:
+                            st.subheader("Sentiment Split")
+                            try:
+                                render_sentiment_chart(analyzed)
+                            except Exception as e:
+                                st.error(f"Error rendering sentiment chart: {e}")
+                                import traceback
+                                st.code(traceback.format_exc())
 
-                    st.markdown("---")
+                        st.markdown("---")
 
-                    # Risk alerts
-                    render_risk_alerts(analyzed)
+                        # Risk alerts
+                        try:
+                            render_risk_alerts(analyzed)
+                        except Exception as e:
+                            st.error(f"Error rendering risk alerts: {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
 
                 else:
                     st.info("No holdings found in your Groww account, or API connection failed.")
@@ -435,7 +462,8 @@ def main():
                 st.write("Please check your Groww API credentials.")
             except Exception as e:
                 st.error(f"Error fetching portfolio: {e}")
-                st.write(f"Error type: `{type(e).__name__}`")
+                import traceback
+                st.code(traceback.format_exc())
                 st.write("Try the manual entry option instead.")
 
     with tab2:
