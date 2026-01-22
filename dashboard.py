@@ -765,7 +765,7 @@ def render_charts_section(report: dict, session_key: str = "default"):
                 yaxis=dict(showgrid=False),
             )
 
-            st.plotly_chart(fig, use_container_width=True, key=f"bar_chart_{session_key}")
+            st.plotly_chart(fig, width="stretch", key=f"bar_chart_{session_key}")
         else:
             st.info("No stock data available for chart")
 
@@ -808,7 +808,7 @@ def render_charts_section(report: dict, session_key: str = "default"):
                     paper_bgcolor="white",
                 )
 
-                st.plotly_chart(fig, use_container_width=True, key=f"pie_chart_{session_key}")
+                st.plotly_chart(fig, width="stretch", key=f"pie_chart_{session_key}")
             else:
                 st.info("No sentiment data available")
         else:
@@ -946,27 +946,27 @@ def render_detailed_sections(report: dict, session_key: str = "default"):
 
     # Key Insights section
     if sections["key_insights"]:
-        with st.expander("🎯 Key Insights", expanded=True, key=f"exp_insights_{session_key}"):
+        with st.expander("🎯 Key Insights", expanded=True):
             st.markdown(colorize_sentiment(sections["key_insights"]), unsafe_allow_html=True)
 
     # Most Discussed Stocks section
     if sections["most_discussed"]:
-        with st.expander("📈 Most Discussed Stocks", expanded=True, key=f"exp_discussed_{session_key}"):
+        with st.expander("📈 Most Discussed Stocks", expanded=True):
             st.markdown(colorize_sentiment(sections["most_discussed"]), unsafe_allow_html=True)
 
     # Sector Trends section
     if sections["sector_trends"]:
-        with st.expander("🏭 Sector Trends", expanded=False, key=f"exp_sectors_{session_key}"):
+        with st.expander("🏭 Sector Trends", expanded=False):
             st.markdown(colorize_sentiment(sections["sector_trends"]), unsafe_allow_html=True)
 
     # Market Sentiment section
     if sections["sentiment_summary"]:
-        with st.expander("📊 Market Sentiment Summary", expanded=False, key=f"exp_sentiment_{session_key}"):
+        with st.expander("📊 Market Sentiment Summary", expanded=False):
             st.markdown(colorize_sentiment(sections["sentiment_summary"]), unsafe_allow_html=True)
 
     # Caution Flags section
     if sections["caution_flags"]:
-        with st.expander("⚠️ Caution Flags", expanded=True, key=f"exp_caution_{session_key}"):
+        with st.expander("⚠️ Caution Flags", expanded=True):
             st.markdown(colorize_sentiment(sections["caution_flags"]), unsafe_allow_html=True)
 
 
@@ -987,7 +987,7 @@ def render_weekly_summary(session_key: str = "default"):
             st.cache_data.clear()
             st.rerun()
 
-    with st.expander("View Weekly Analysis", expanded=False, key=f"exp_weekly_{session_key}"):
+    with st.expander("View Weekly Analysis", expanded=False):
         with st.spinner("Generating weekly summary with AI..."):
             summary = cached_weekly_summary(dates_key)
 
@@ -1027,7 +1027,7 @@ def render_date_selector() -> tuple:
 
 def render_raw_report(report: dict, session_key: str = "default"):
     """Render raw report option."""
-    with st.expander("📝 View Raw Report", key=f"exp_raw_{session_key}"):
+    with st.expander("📝 View Raw Report"):
         st.text(report.get("content", ""))
 
 
@@ -1194,7 +1194,7 @@ def render_volume_changes_chart(changes: list):
         yaxis=dict(showgrid=False),
     )
 
-    st.plotly_chart(fig, use_container_width=True, key="volume_changes_chart")
+    st.plotly_chart(fig, width="stretch", key="volume_changes_chart")
 
 
 def render_new_removed_stocks(new_stocks: list, removed_stocks: list):
