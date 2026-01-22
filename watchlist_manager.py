@@ -73,7 +73,7 @@ SECTOR_STOCKS = {
     "Pharma": [
         "SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "LUPIN",
         "AUROPHARMA", "TORNTPHARM", "ZYDUSLIFE", "BIOCON", "ALKEM",
-        "IPCALAB", "LAURUSLABS", "GLENMARK", "NATCOPHARMA", "GRANULES",
+        "IPCALAB", "LAURUSLABS", "GLENMARK", "GRANULES", "ABBOTINDIA",
     ],
     "Auto": [
         "TATAMOTORS", "M&M", "MARUTI", "BAJAJ-AUTO", "HEROMOTOCO",
@@ -107,7 +107,7 @@ SECTOR_STOCKS = {
     "Infrastructure": [
         "LT", "ADANIPORTS", "ULTRACEMCO", "GRASIM", "AMBUJACEM",
         "ACC", "SHREECEM", "RAMCOCEM", "DALBHARAT", "JKCEMENT",
-        "IRB", "KNR", "NCC", "NBCC", "ENGINERSIN",
+        "IRB", "KNRCON", "NCC", "NBCC", "ENGINERSIN",
     ],
     "Telecom": [
         "BHARTIARTL", "IDEA", "TATACOMM", "ROUTE", "STLTECH",
@@ -117,7 +117,7 @@ SECTOR_STOCKS = {
         "WHIRLPOOL", "BATAINDIA", "RELAXO", "VGUARD", "ORIENTELEC",
     ],
     "Defence_PSU": [
-        "HAL", "BEL", "BHEL", "MAZAGON", "COCHINSHIP",
+        "HAL", "BEL", "BHEL", "MAZDOCK", "COCHINSHIP",
         "BDL", "GRSE", "IRFC", "RVNL", "IRCON",
     ],
 }

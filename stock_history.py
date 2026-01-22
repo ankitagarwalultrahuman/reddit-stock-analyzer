@@ -42,12 +42,33 @@ ETF_MAPPINGS = {
 
 # Special ticker mappings for stocks with unusual symbols
 SPECIAL_TICKER_MAPPINGS = {
+    # Stocks with hyphens
     "BAJAJ-AUTO": "BAJAJ-AUTO.NS",
     "BAJAJAUTO": "BAJAJ-AUTO.NS",
+
+    # Stocks with ampersands
     "M&M": "M&M.NS",
     "MM": "M&M.NS",
     "M&MFIN": "M&MFIN.NS",
     "L&TFH": "L&TFH.NS",
+
+    # Tickers that need different symbols on yfinance
+    "NATCOPHARMA": "NATCOPHARM.NS",
+    "TATAMOTORS": "TATAMTRDVR.NS",  # DVR shares, regular might be TATAMOTORS.NS
+    "MAZAGON": "MAZDOCK.NS",
+    "KNR": "KNRCON.NS",
+    "COCHINSHIP": "COCHINSHIP.NS",
+    "GRSE": "GRSE.NS",
+    "BDL": "BDL.NS",
+    "IRFC": "IRFC.NS",
+    "RVNL": "RVNL.NS",
+    "IRCON": "IRCON.NS",
+    "HAL": "HAL.NS",
+
+    # Common alternate names
+    "NIFTY": "^NSEI",
+    "BANKNIFTY": "^NSEBANK",
+    "SENSEX": "^BSESN",
 }
 
 
