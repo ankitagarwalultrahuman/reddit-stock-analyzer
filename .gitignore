@@ -1,0 +1,32 @@
+# Environment variables
+.env
+
+# Keep output folder but ignore large raw data files
+output/raw_data_*.json
+
+# Logs
+logs/
+
+# Portfolio data (contains personal info)
+portfolio.json
+portfolio_imports/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
