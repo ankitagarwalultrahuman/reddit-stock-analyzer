@@ -6,12 +6,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 
-from config import DASHBOARD_CACHE_TTL, WEEKLY_SUMMARY_DAYS, NEWS_ENABLED
+from config import DASHBOARD_CACHE_TTL, WEEKLY_SUMMARY_DAYS, NEWS_ENABLED, SESSION_AM, SESSION_PM
 from dashboard_analytics import (
     get_available_dates,
     get_report_for_date,
     get_recent_reports,
     get_weekly_summary,
+    get_am_pm_reports_for_date,
+    load_comparison_for_date,
     parse_report_sections,
     parse_stock_mentions,
     parse_key_insights_structured,
@@ -374,6 +376,172 @@ st.markdown("""
         font-size: 0.8rem;
         margin-top: 0.5rem;
         color: #64748b;
+    }
+
+    /* Comparison View Styles */
+    .comparison-header {
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%);
+        padding: 1.5rem 2rem;
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+        color: white;
+        box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+    }
+
+    .comparison-summary-card {
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 1.25rem;
+        text-align: center;
+        border: 1px solid #e2e8f0;
+    }
+    .comparison-summary-card .value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+    .comparison-summary-card .label {
+        font-size: 0.85rem;
+        color: #64748b;
+        margin-top: 0.25rem;
+    }
+
+    .mood-shift-container {
+        background: #faf5ff;
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid #e9d5ff;
+        margin: 1rem 0;
+    }
+    .mood-shift-visual {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2rem;
+        margin: 1rem 0;
+    }
+    .mood-box {
+        text-align: center;
+        padding: 1rem 2rem;
+        border-radius: 10px;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .mood-box .emoji {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .mood-box .label {
+        font-size: 0.85rem;
+        color: #64748b;
+    }
+    .mood-box .mood-text {
+        font-size: 1.1rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+    .mood-arrow {
+        font-size: 2rem;
+        color: #7c3aed;
+    }
+    .mood-description {
+        text-align: center;
+        color: #6b21a8;
+        font-style: italic;
+        margin-top: 1rem;
+    }
+
+    .sentiment-change-row {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background: #f8fafc;
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+        border-left: 4px solid #e2e8f0;
+    }
+    .sentiment-change-row.improving {
+        border-left-color: #16a34a;
+        background: #f0fdf4;
+    }
+    .sentiment-change-row.declining {
+        border-left-color: #dc2626;
+        background: #fef2f2;
+    }
+    .sentiment-change-row .ticker {
+        font-weight: 700;
+        min-width: 120px;
+    }
+    .sentiment-change-row .change {
+        flex-grow: 1;
+        color: #475569;
+    }
+    .sentiment-change-row .direction {
+        font-weight: 600;
+        padding: 0.2rem 0.6rem;
+        border-radius: 4px;
+    }
+    .sentiment-change-row .direction.improving {
+        background: #dcfce7;
+        color: #166534;
+    }
+    .sentiment-change-row .direction.declining {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .new-stock-badge {
+        display: inline-flex;
+        align-items: center;
+        background: #ecfdf5;
+        border: 1px solid #a7f3d0;
+        border-radius: 20px;
+        padding: 0.4rem 0.8rem;
+        margin: 0.25rem;
+    }
+    .new-stock-badge .ticker {
+        font-weight: 700;
+        color: #166534;
+    }
+    .new-stock-badge .mentions {
+        font-size: 0.8rem;
+        color: #15803d;
+        margin-left: 0.5rem;
+    }
+
+    .removed-stock-badge {
+        display: inline-flex;
+        align-items: center;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 20px;
+        padding: 0.4rem 0.8rem;
+        margin: 0.25rem;
+    }
+    .removed-stock-badge .ticker {
+        font-weight: 700;
+        color: #991b1b;
+    }
+    .removed-stock-badge .mentions {
+        font-size: 0.8rem;
+        color: #b91c1c;
+        margin-left: 0.5rem;
+    }
+
+    .session-tab {
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px 8px 0 0;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    .session-tab.active {
+        background: #3b82f6;
+        color: white;
+    }
+    .session-tab:not(.active) {
+        background: #e2e8f0;
+        color: #475569;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -863,18 +1031,360 @@ def render_raw_report(report: dict):
         st.text(report.get("content", ""))
 
 
+def render_session_selector(sessions_data: dict) -> str | None:
+    """
+    Render AM/PM/Comparison tabs when both sessions exist.
+
+    Args:
+        sessions_data: Result from get_am_pm_reports_for_date()
+
+    Returns:
+        Selected view: 'AM', 'PM', 'comparison', or None
+    """
+    available = sessions_data.get("available_sessions", [])
+    has_both = sessions_data.get("has_both", False)
+
+    if not available or available == ["legacy"]:
+        return None
+
+    if len(available) == 1:
+        # Only one session available, no need for tabs
+        return available[0]
+
+    # Show tabs when multiple sessions available
+    tab_labels = []
+    tab_keys = []
+
+    if SESSION_AM in available:
+        tab_labels.append("🌅 Morning (8 AM)")
+        tab_keys.append(SESSION_AM)
+
+    if SESSION_PM in available:
+        tab_labels.append("🌆 Evening (6 PM)")
+        tab_keys.append(SESSION_PM)
+
+    if has_both:
+        tab_labels.append("🔄 AM vs PM Comparison")
+        tab_keys.append("comparison")
+
+    # Use Streamlit tabs
+    tabs = st.tabs(tab_labels)
+
+    # Return the selected tab key based on session state
+    if "selected_session_tab" not in st.session_state:
+        st.session_state.selected_session_tab = tab_keys[-1] if has_both else tab_keys[0]
+
+    return st.session_state.selected_session_tab, tabs, tab_keys
+
+
+def render_mood_shift_visual(mood: dict):
+    """Render visual AM to PM mood comparison."""
+    am_mood = mood.get("am_mood", "neutral")
+    pm_mood = mood.get("pm_mood", "neutral")
+    description = mood.get("shift_description", "")
+
+    mood_emojis = {
+        "bullish": "📈",
+        "bearish": "📉",
+        "neutral": "➡️",
+    }
+    mood_colors = {
+        "bullish": "#16a34a",
+        "bearish": "#dc2626",
+        "neutral": "#d97706",
+    }
+
+    am_emoji = mood_emojis.get(am_mood, "➡️")
+    pm_emoji = mood_emojis.get(pm_mood, "➡️")
+    am_color = mood_colors.get(am_mood, "#d97706")
+    pm_color = mood_colors.get(pm_mood, "#d97706")
+
+    st.markdown(f"""
+    <div class="mood-shift-container">
+        <h4 style="text-align: center; color: #6b21a8; margin-bottom: 1rem;">MARKET MOOD SHIFT</h4>
+        <div class="mood-shift-visual">
+            <div class="mood-box">
+                <div class="emoji">{am_emoji}</div>
+                <div class="label">Morning</div>
+                <div class="mood-text" style="color: {am_color};">{am_mood.upper()}</div>
+            </div>
+            <div class="mood-arrow">→</div>
+            <div class="mood-box">
+                <div class="emoji">{pm_emoji}</div>
+                <div class="label">Evening</div>
+                <div class="mood-text" style="color: {pm_color};">{pm_mood.upper()}</div>
+            </div>
+        </div>
+        <div class="mood-description">"{description}"</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_sentiment_changes_table(changes: list):
+    """Render table showing sentiment shifts."""
+    if not changes:
+        st.info("No sentiment changes detected between AM and PM reports.")
+        return
+
+    st.markdown("#### Sentiment Changes")
+
+    for change in changes:
+        ticker = change.get("ticker", "Unknown")
+        am_sent = change.get("am_sentiment", "neutral")
+        pm_sent = change.get("pm_sentiment", "neutral")
+        direction = change.get("change_direction", "stable")
+
+        direction_icon = "🔼" if direction == "improving" else "🔽" if direction == "declining" else "➡️"
+        direction_label = direction.capitalize()
+        row_class = direction
+
+        st.markdown(f"""
+        <div class="sentiment-change-row {row_class}">
+            <span class="ticker">{ticker}</span>
+            <span class="change">{am_sent} → {pm_sent}</span>
+            <span class="direction {direction}">{direction_icon} {direction_label}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def render_volume_changes_chart(changes: list):
+    """Render bar chart of mention volume changes."""
+    if not changes:
+        st.info("No significant volume changes detected (threshold: 20%).")
+        return
+
+    st.markdown("#### Volume Changes (AM → PM)")
+
+    # Prepare data for chart
+    df = pd.DataFrame(changes[:10])  # Top 10
+
+    if df.empty:
+        return
+
+    # Create horizontal bar chart
+    df["ticker_short"] = df["ticker"].apply(lambda x: x[:20] + "..." if len(x) > 20 else x)
+    df["color"] = df["change_percent"].apply(lambda x: "#16a34a" if x > 0 else "#dc2626")
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        y=df["ticker_short"],
+        x=df["change_percent"],
+        orientation="h",
+        marker_color=df["color"],
+        text=[f"{v:+.1f}%" for v in df["change_percent"]],
+        textposition="outside",
+        hovertemplate="<b>%{y}</b><br>AM: %{customdata[0]} mentions<br>PM: %{customdata[1]} mentions<br>Change: %{x:.1f}%<extra></extra>",
+        customdata=df[["am_mentions", "pm_mentions"]].values,
+    ))
+
+    fig.update_layout(
+        height=max(200, len(df) * 40),
+        margin=dict(l=0, r=60, t=20, b=20),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(
+            showgrid=True,
+            gridcolor="#f1f5f9",
+            zeroline=True,
+            zerolinecolor="#94a3b8",
+            zerolinewidth=2,
+            title="Change %",
+        ),
+        yaxis=dict(showgrid=False),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_new_removed_stocks(new_stocks: list, removed_stocks: list):
+    """Render lists of new and removed stocks."""
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### ✨ New in Evening")
+        if new_stocks:
+            badges_html = ""
+            for stock in new_stocks[:8]:
+                ticker = stock.get("ticker", "Unknown")
+                mentions = stock.get("mentions", 0)
+                sentiment = stock.get("sentiment", "neutral")
+                badges_html += f"""
+                <span class="new-stock-badge">
+                    <span class="ticker">{ticker}</span>
+                    <span class="mentions">{mentions} mentions</span>
+                </span>
+                """
+            st.markdown(badges_html, unsafe_allow_html=True)
+        else:
+            st.info("No new stocks appeared in PM report")
+
+    with col2:
+        st.markdown("#### 📉 Dropped from Morning")
+        if removed_stocks:
+            badges_html = ""
+            for stock in removed_stocks[:8]:
+                ticker = stock.get("ticker", "Unknown")
+                mentions = stock.get("mentions", 0)
+                badges_html += f"""
+                <span class="removed-stock-badge">
+                    <span class="ticker">{ticker}</span>
+                    <span class="mentions">{mentions} mentions (AM)</span>
+                </span>
+                """
+            st.markdown(badges_html, unsafe_allow_html=True)
+        else:
+            st.info("No stocks dropped from PM report")
+
+
+def render_comparison_summary(comparison: dict):
+    """Render comparison summary cards."""
+    summary = comparison.get("summary", {})
+
+    cols = st.columns(4)
+
+    metrics = [
+        ("✨ New", summary.get("total_new_stocks", 0), "New stocks in PM"),
+        ("📉 Removed", summary.get("total_removed_stocks", 0), "Dropped from PM"),
+        ("🔄 Shifts", summary.get("total_sentiment_changes", 0), "Sentiment changes"),
+        ("📊 Volume", summary.get("total_volume_changes", 0), "Volume changes >20%"),
+    ]
+
+    for col, (icon, value, label) in zip(cols, metrics):
+        with col:
+            st.markdown(f"""
+            <div class="comparison-summary-card">
+                <div class="value">{icon} {value}</div>
+                <div class="label">{label}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+
+def render_comparison_view(comparison: dict):
+    """Render the complete AM vs PM comparison dashboard."""
+    if not comparison:
+        st.warning("Comparison data not available. Run comparison_generator.py to generate it.")
+        return
+
+    # Header
+    date_str = comparison.get("date", "Unknown")
+    st.markdown(f"""
+    <div class="comparison-header">
+        <h2 style="margin: 0; color: white;">🔄 AM vs PM Comparison</h2>
+        <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">Analyzing market sentiment changes throughout {date_str}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Summary cards
+    render_comparison_summary(comparison)
+
+    st.markdown("---")
+
+    # Mood shift visual
+    mood = comparison.get("market_mood_shift", {})
+    render_mood_shift_visual(mood)
+
+    st.markdown("---")
+
+    # Two column layout for new/removed stocks
+    render_new_removed_stocks(
+        comparison.get("new_stocks_pm", []),
+        comparison.get("removed_stocks_pm", [])
+    )
+
+    st.markdown("---")
+
+    # Sentiment changes and volume changes side by side
+    col1, col2 = st.columns(2)
+
+    with col1:
+        render_sentiment_changes_table(comparison.get("sentiment_changes", []))
+
+    with col2:
+        render_volume_changes_chart(comparison.get("volume_changes", []))
+
+
 def main():
     """Main dashboard application."""
     render_header()
 
     # Date selector at top
-    selected_date, report = render_date_selector()
+    available_dates = get_available_dates()
 
-    if not report:
-        if selected_date:
-            st.error(f"Could not load report for {format_date_for_display(selected_date)}")
+    if not available_dates:
+        st.warning("No reports found in the output folder. Run the analyzer first to generate reports.")
         return
 
+    # Create date options for dropdown
+    date_options = {format_date_for_display(d): d for d in available_dates}
+    date_labels = list(date_options.keys())
+
+    selected_label = st.selectbox(
+        "📅 Select Report Date",
+        date_labels,
+        index=0,
+        help="Select a date to view the daily report",
+    )
+
+    selected_date = date_options[selected_label]
+
+    # Check for AM/PM reports
+    sessions_data = get_am_pm_reports_for_date(selected_date)
+    available_sessions = sessions_data.get("available_sessions", [])
+    has_both = sessions_data.get("has_both", False)
+
+    # Determine which view to show
+    if has_both or (len(available_sessions) > 1 and "legacy" not in available_sessions):
+        # Show tabs for AM/PM/Comparison
+        tab_labels = []
+        tab_keys = []
+
+        if SESSION_AM in available_sessions:
+            tab_labels.append("🌅 Morning (8 AM)")
+            tab_keys.append(SESSION_AM)
+
+        if SESSION_PM in available_sessions:
+            tab_labels.append("🌆 Evening (6 PM)")
+            tab_keys.append(SESSION_PM)
+
+        if has_both:
+            tab_labels.append("🔄 AM vs PM Comparison")
+            tab_keys.append("comparison")
+
+        tabs = st.tabs(tab_labels)
+
+        for i, (tab, key) in enumerate(zip(tabs, tab_keys)):
+            with tab:
+                if key == "comparison":
+                    # Render comparison view
+                    comparison = load_comparison_for_date(selected_date)
+                    render_comparison_view(comparison)
+                else:
+                    # Render regular report view
+                    report = sessions_data.get("am" if key == SESSION_AM else "pm")
+                    if report:
+                        render_report_view(report)
+                    else:
+                        st.error(f"Could not load {key} report")
+    else:
+        # Single report or legacy - show regular view
+        report = get_report_for_date(selected_date)
+        if report:
+            render_report_view(report)
+        else:
+            st.error(f"Could not load report for {format_date_for_display(selected_date)}")
+
+    # Footer
+    st.markdown("---")
+    st.caption(
+        "**Disclaimer**: This dashboard displays aggregated social media sentiment "
+        "and is for educational purposes only. Always do your own research before "
+        "making investment decisions."
+    )
+
+
+def render_report_view(report: dict):
+    """Render the standard report view with all sections."""
     # Today's Actions section (prominent at top)
     render_todays_actions(report)
 
@@ -914,14 +1424,6 @@ def main():
 
     # Raw report
     render_raw_report(report)
-
-    # Footer
-    st.markdown("---")
-    st.caption(
-        "**Disclaimer**: This dashboard displays aggregated social media sentiment "
-        "and is for educational purposes only. Always do your own research before "
-        "making investment decisions."
-    )
 
 
 if __name__ == "__main__":

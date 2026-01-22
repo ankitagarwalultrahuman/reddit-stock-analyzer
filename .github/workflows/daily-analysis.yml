@@ -1,12 +1,20 @@
 name: Daily Stock Analysis
 
 on:
-  # Run daily at 8:00 AM IST (2:30 AM UTC)
+  # Run twice daily:
+  # - 8:00 AM IST (2:30 AM UTC) - Morning session
+  # - 6:00 PM IST (12:30 PM UTC) - Evening session
   schedule:
-    - cron: '30 2 * * *'
+    - cron: '30 2 * * *'   # 8 AM IST
+    - cron: '30 12 * * *'  # 6 PM IST
 
   # Allow manual trigger from GitHub UI
   workflow_dispatch:
+    inputs:
+      session:
+        description: 'Session (AM/PM/auto)'
+        required: false
+        default: 'auto'
 
 jobs:
   analyze:
@@ -29,25 +37,50 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Determine session
+        id: session
+        run: |
+          # Use manual input if provided, otherwise auto-detect based on UTC hour
+          if [ "${{ github.event.inputs.session }}" != "" ] && [ "${{ github.event.inputs.session }}" != "auto" ]; then
+            echo "session=${{ github.event.inputs.session }}" >> $GITHUB_OUTPUT
+          else
+            HOUR=$(date -u +%H)
+            # Before 8 UTC (1:30 PM IST) is AM session, after is PM session
+            if [ $HOUR -lt 8 ]; then
+              echo "session=AM" >> $GITHUB_OUTPUT
+            else
+              echo "session=PM" >> $GITHUB_OUTPUT
+            fi
+          fi
+          echo "Determined session: $(cat $GITHUB_OUTPUT | grep session)"
+
       - name: Run Reddit Stock Analyzer
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          python main.py
+          python main.py --session ${{ steps.session.outputs.session }}
 
-      - name: Commit and push new report
+      - name: Generate comparison (PM session only)
+        if: steps.session.outputs.session == 'PM'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "Generating AM vs PM comparison..."
+          python comparison_generator.py || echo "Comparison generation skipped (AM report may not exist)"
+
+      - name: Commit and push new reports
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # Add only report files (not raw data)
-          git add output/report_*.txt
+          # Add report files and comparison files (not raw data)
+          git add output/report_*.txt output/comparison_*.json 2>/dev/null || true
 
           # Check if there are changes to commit
           if git diff --staged --quiet; then
             echo "No new reports to commit"
           else
-            git commit -m "Daily report: $(date +'%Y-%m-%d %H:%M') UTC
+            git commit -m "${{ steps.session.outputs.session }} report: $(date +'%Y-%m-%d %H:%M') UTC
 
             Automated analysis from GitHub Actions"
             git push
@@ -56,6 +89,8 @@ jobs:
       - name: Upload report as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: daily-report-${{ github.run_number }}
-          path: output/report_*.txt
+          name: ${{ steps.session.outputs.session }}-report-${{ github.run_number }}
+          path: |
+            output/report_*.txt
+            output/comparison_*.json
           retention-days: 30

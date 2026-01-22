@@ -6,13 +6,36 @@ Scrapes top posts from Indian stock market subreddits and uses Claude AI
 to generate a daily digest of key insights and recommendations.
 """
 
+import argparse
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
-from config import SUBREDDITS, OUTPUT_DIR, SAVE_RAW_DATA, MAX_POST_AGE_HOURS
+from config import (
+    SUBREDDITS, OUTPUT_DIR, SAVE_RAW_DATA, MAX_POST_AGE_HOURS,
+    SESSION_AM, SESSION_PM, AM_CUTOFF_HOUR_IST, IST_UTC_OFFSET_HOURS
+)
 from reddit_scraper import scrape_all_subreddits
 from summarizer import analyze_with_claude, generate_report
+
+
+def get_ist_now() -> datetime:
+    """Get current time in IST."""
+    ist = timezone(timedelta(hours=IST_UTC_OFFSET_HOURS))
+    return datetime.now(ist)
+
+
+def get_session_suffix() -> str:
+    """Auto-detect AM/PM based on IST time."""
+    ist_now = get_ist_now()
+    if ist_now.hour < AM_CUTOFF_HOUR_IST:
+        return SESSION_AM
+    return SESSION_PM
+
+
+def get_date_str() -> str:
+    """Get current date string in YYYYMMDD format based on IST."""
+    return get_ist_now().strftime('%Y%m%d')
 
 
 def save_raw_data(all_data: dict, timestamp: str) -> str:
@@ -26,10 +49,15 @@ def save_raw_data(all_data: dict, timestamp: str) -> str:
     return filename
 
 
-def save_report(report: str, timestamp: str) -> str:
-    """Save the generated report to a text file."""
+def save_report(report: str, session: str) -> str:
+    """
+    Save the generated report to a text file with session-based naming.
+
+    New format: report_YYYYMMDD_AM.txt or report_YYYYMMDD_PM.txt
+    """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    filename = f"{OUTPUT_DIR}/report_{timestamp}.txt"
+    date_str = get_date_str()
+    filename = f"{OUTPUT_DIR}/report_{date_str}_{session}.txt"
 
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(report)
@@ -37,16 +65,43 @@ def save_report(report: str, timestamp: str) -> str:
     return filename
 
 
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Reddit Indian Stock Market Analyzer - Daily Digest Generator"
+    )
+    parser.add_argument(
+        "--session",
+        choices=["AM", "PM", "auto"],
+        default="auto",
+        help="Session type: AM (morning), PM (evening), or auto (detect based on IST time)"
+    )
+    return parser.parse_args()
+
+
 def main():
     """Main entry point for the Reddit Stock Analyzer."""
-    print("""
+    args = parse_args()
+
+    # Determine session
+    if args.session == "auto":
+        session = get_session_suffix()
+    else:
+        session = args.session
+
+    print(f"""
     ╔══════════════════════════════════════════════════════════════╗
     ║         REDDIT INDIAN STOCK MARKET ANALYZER                  ║
-    ║         Daily Digest Generator                               ║
+    ║         Daily Digest Generator - {session} Session                  ║
     ╚══════════════════════════════════════════════════════════════╝
     """)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    date_str = get_date_str()
+
+    print(f"Session: {session}")
+    print(f"Date: {date_str}")
+    print(f"IST Time: {get_ist_now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Step 1: Scrape Reddit data
     print("\n[1/3] SCRAPING REDDIT DATA")
@@ -87,7 +142,7 @@ def main():
     print("-" * 40)
 
     report = generate_report(analysis, total_posts, total_comments, SUBREDDITS, MAX_POST_AGE_HOURS)
-    report_file = save_report(report, timestamp)
+    report_file = save_report(report, session)
 
     print(f"Report saved to: {report_file}")
 
@@ -95,7 +150,7 @@ def main():
     print("\n" + "=" * 80)
     print(report)
 
-    print("\nDone! Check the output folder for saved files.")
+    print(f"\nDone! {session} session report saved to: {report_file}")
 
 
 if __name__ == "__main__":

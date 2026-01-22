@@ -64,3 +64,10 @@ NEWS_FETCH_HOURS = 48  # Hours of news to fetch
 NEWS_CACHE_TTL = 1800  # 30 minutes cache
 NEWS_MAX_ARTICLES = 20  # Max articles to analyze
 NEWS_ENABLED = True  # Feature flag for news section
+
+# Session Configuration (AM/PM reports)
+SESSION_AM = "AM"
+SESSION_PM = "PM"
+AM_CUTOFF_HOUR_IST = 12  # Before 12 PM IST is considered morning session
+IST_UTC_OFFSET_HOURS = 5.5  # IST is UTC+5:30
+VOLUME_CHANGE_THRESHOLD = 20  # Percentage change threshold for volume changes

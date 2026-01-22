@@ -1,21 +1,29 @@
 """Dashboard analytics module - generates 7-day AI summary using Claude API."""
 
+import json
 import os
 import re
 from datetime import datetime, date
 from pathlib import Path
 
 import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, OUTPUT_DIR, WEEKLY_SUMMARY_DAYS
+from config import (
+    ANTHROPIC_API_KEY, CLAUDE_MODEL, OUTPUT_DIR, WEEKLY_SUMMARY_DAYS,
+    SESSION_AM, SESSION_PM
+)
 
 
 def load_reports_by_date() -> dict[date, dict]:
     """
     Scan output folder for report files and group by date.
 
+    Supports both legacy format (report_YYYYMMDD_HHMMSS.txt) and
+    new session format (report_YYYYMMDD_AM.txt, report_YYYYMMDD_PM.txt).
+
     Returns:
         dict with date as key, report data (content, metadata) as value.
-        Only the latest report per day is included.
+        Prefers PM reports over AM reports when both exist.
+        Falls back to latest timestamped report for legacy files.
     """
     reports = {}
     output_path = Path(OUTPUT_DIR)
@@ -27,41 +35,195 @@ def load_reports_by_date() -> dict[date, dict]:
     report_files = list(output_path.glob("report_*.txt"))
 
     for report_file in report_files:
-        # Extract timestamp from filename: report_YYYYMMDD_HHMMSS.txt
-        match = re.match(r"report_(\d{8})_(\d{6})\.txt", report_file.name)
-        if not match:
+        # Try new session format first: report_YYYYMMDD_AM.txt or report_YYYYMMDD_PM.txt
+        session_match = re.match(r"report_(\d{8})_(AM|PM)\.txt", report_file.name)
+        if session_match:
+            date_str = session_match.group(1)
+            session = session_match.group(2)
+
+            try:
+                report_date = datetime.strptime(date_str, "%Y%m%d").date()
+                # Use session time: AM = 08:00, PM = 18:00 for ordering
+                session_hour = 8 if session == SESSION_AM else 18
+                report_time = datetime.strptime(f"{date_str}_{session_hour:02d}0000", "%Y%m%d_%H%M%S")
+            except ValueError:
+                continue
+
+            # Read the report content
+            try:
+                content = report_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+            # Parse metadata from report header
+            metadata = parse_report_metadata(content)
+            metadata["timestamp"] = report_time
+            metadata["filename"] = report_file.name
+            metadata["session"] = session
+
+            # Prefer PM over AM, and newer over older
+            if report_date not in reports or reports[report_date]["timestamp"] < report_time:
+                reports[report_date] = {
+                    "content": content,
+                    "timestamp": report_time,
+                    "filename": report_file.name,
+                    "metadata": metadata,
+                    "session": session,
+                }
             continue
 
-        date_str = match.group(1)
-        time_str = match.group(2)
+        # Try legacy format: report_YYYYMMDD_HHMMSS.txt
+        legacy_match = re.match(r"report_(\d{8})_(\d{6})\.txt", report_file.name)
+        if legacy_match:
+            date_str = legacy_match.group(1)
+            time_str = legacy_match.group(2)
 
-        try:
-            report_date = datetime.strptime(date_str, "%Y%m%d").date()
-            report_time = datetime.strptime(f"{date_str}_{time_str}", "%Y%m%d_%H%M%S")
-        except ValueError:
-            continue
+            try:
+                report_date = datetime.strptime(date_str, "%Y%m%d").date()
+                report_time = datetime.strptime(f"{date_str}_{time_str}", "%Y%m%d_%H%M%S")
+            except ValueError:
+                continue
 
-        # Read the report content
-        try:
-            content = report_file.read_text(encoding="utf-8")
-        except Exception:
-            continue
+            # Read the report content
+            try:
+                content = report_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
 
-        # Parse metadata from report header
-        metadata = parse_report_metadata(content)
-        metadata["timestamp"] = report_time
-        metadata["filename"] = report_file.name
+            # Parse metadata from report header
+            metadata = parse_report_metadata(content)
+            metadata["timestamp"] = report_time
+            metadata["filename"] = report_file.name
+            metadata["session"] = None  # Legacy reports don't have session
 
-        # Keep only the latest report per day
-        if report_date not in reports or reports[report_date]["timestamp"] < report_time:
-            reports[report_date] = {
-                "content": content,
-                "timestamp": report_time,
-                "filename": report_file.name,
-                "metadata": metadata,
-            }
+            # Keep only the latest report per day (session reports take priority)
+            if report_date not in reports or (
+                reports[report_date].get("session") is None and
+                reports[report_date]["timestamp"] < report_time
+            ):
+                reports[report_date] = {
+                    "content": content,
+                    "timestamp": report_time,
+                    "filename": report_file.name,
+                    "metadata": metadata,
+                    "session": None,
+                }
 
     return reports
+
+
+def get_am_pm_reports_for_date(report_date: date) -> dict:
+    """
+    Get both AM and PM reports for a specific date.
+
+    Args:
+        report_date: The date to get reports for
+
+    Returns:
+        dict with keys 'am', 'pm', 'has_both', and 'available_sessions'
+        Each session key contains report data or None
+    """
+    output_path = Path(OUTPUT_DIR)
+    date_str = report_date.strftime("%Y%m%d")
+
+    result = {
+        "am": None,
+        "pm": None,
+        "has_both": False,
+        "available_sessions": [],
+    }
+
+    # Load AM report
+    am_file = output_path / f"report_{date_str}_AM.txt"
+    if am_file.exists():
+        try:
+            content = am_file.read_text(encoding="utf-8")
+            metadata = parse_report_metadata(content)
+            metadata["filename"] = am_file.name
+            metadata["session"] = SESSION_AM
+            result["am"] = {
+                "content": content,
+                "timestamp": datetime.strptime(f"{date_str}_080000", "%Y%m%d_%H%M%S"),
+                "filename": am_file.name,
+                "metadata": metadata,
+                "session": SESSION_AM,
+            }
+            result["available_sessions"].append(SESSION_AM)
+        except Exception:
+            pass
+
+    # Load PM report
+    pm_file = output_path / f"report_{date_str}_PM.txt"
+    if pm_file.exists():
+        try:
+            content = pm_file.read_text(encoding="utf-8")
+            metadata = parse_report_metadata(content)
+            metadata["filename"] = pm_file.name
+            metadata["session"] = SESSION_PM
+            result["pm"] = {
+                "content": content,
+                "timestamp": datetime.strptime(f"{date_str}_180000", "%Y%m%d_%H%M%S"),
+                "filename": pm_file.name,
+                "metadata": metadata,
+                "session": SESSION_PM,
+            }
+            result["available_sessions"].append(SESSION_PM)
+        except Exception:
+            pass
+
+    # Check for legacy format if no session reports found
+    if not result["available_sessions"]:
+        legacy_files = list(output_path.glob(f"report_{date_str}_??????.txt"))
+        if legacy_files:
+            # Get the latest one
+            latest_file = max(legacy_files, key=lambda f: f.name)
+            try:
+                content = latest_file.read_text(encoding="utf-8")
+                metadata = parse_report_metadata(content)
+                metadata["filename"] = latest_file.name
+                metadata["session"] = None
+                # Store legacy as "pm" position for backwards compatibility
+                result["pm"] = {
+                    "content": content,
+                    "timestamp": datetime.strptime(
+                        latest_file.stem.replace("report_", ""),
+                        "%Y%m%d_%H%M%S"
+                    ),
+                    "filename": latest_file.name,
+                    "metadata": metadata,
+                    "session": None,
+                }
+                result["available_sessions"].append("legacy")
+            except Exception:
+                pass
+
+    result["has_both"] = result["am"] is not None and result["pm"] is not None
+
+    return result
+
+
+def load_comparison_for_date(report_date: date) -> dict | None:
+    """
+    Load comparison JSON for a specific date.
+
+    Args:
+        report_date: The date to load comparison for
+
+    Returns:
+        Comparison data dict or None if not found
+    """
+    output_path = Path(OUTPUT_DIR)
+    date_str = report_date.strftime("%Y%m%d")
+    comparison_file = output_path / f"comparison_{date_str}.json"
+
+    if not comparison_file.exists():
+        return None
+
+    try:
+        with open(comparison_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 def parse_report_metadata(content: str) -> dict:
