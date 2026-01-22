@@ -339,10 +339,26 @@ def render_mf_analysis(report_content: str):
 
 def main():
     """Main portfolio analysis page."""
-    render_header()
+    st.write("DEBUG 1: Starting main()")
+
+    try:
+        render_header()
+        st.write("DEBUG 2: Header rendered")
+    except Exception as e:
+        st.error(f"Error rendering header: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+        return
 
     # Check Groww API configuration
-    client = GrowwClient()
+    try:
+        client = GrowwClient()
+        st.write(f"DEBUG 3: GrowwClient created, configured={client.is_configured()}")
+    except Exception as e:
+        st.error(f"Error creating GrowwClient: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+        return
 
     if not client.is_configured():
         st.warning("""
@@ -361,7 +377,15 @@ def main():
         st.info("You can still use manual portfolio entry below.")
 
     # Get latest report
-    available_dates = get_available_dates()
+    try:
+        available_dates = get_available_dates()
+        st.write(f"DEBUG 4: Got {len(available_dates) if available_dates else 0} available dates")
+    except Exception as e:
+        st.error(f"Error getting available dates: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+        return
+
     if not available_dates:
         st.error("No analysis reports found. Run the analyzer first: `python main.py`")
         return
@@ -369,13 +393,19 @@ def main():
     latest_date = available_dates[0]
     report = get_report_for_date(latest_date)
     report_content = report.get("content", "") if report else ""
+    st.write(f"DEBUG 5: Report loaded, content length={len(report_content)}")
 
     st.caption(f"📅 Using report from: {latest_date.strftime('%B %d, %Y')}")
+
+    st.write("DEBUG 6: About to create tabs")
 
     # Tabs for different views
     tab1, tab2, tab3 = st.tabs(["📊 Equity Holdings", "📈 Mutual Funds", "⚙️ Manual Entry"])
 
+    st.write("DEBUG 7: Tabs created")
+
     with tab1:
+        st.write("DEBUG 8: Inside tab1")
         st.subheader("Equity Holdings vs Reddit Sentiment")
 
         # Debug: Show configuration status
@@ -393,15 +423,20 @@ def main():
             """)
 
         # Fetch holdings
+        st.write("DEBUG 9: About to fetch holdings")
         with st.spinner("Fetching portfolio from Groww..."):
             try:
                 holdings = client.get_holdings_with_prices()
+                st.write(f"DEBUG 10: Got {len(holdings) if holdings else 0} holdings")
 
                 if holdings:
                     # Get summary
+                    st.write("DEBUG 11: About to get portfolio summary")
                     try:
                         summary = get_portfolio_summary(holdings)
+                        st.write(f"DEBUG 12: Summary: {summary}")
                         render_portfolio_summary(summary)
+                        st.write("DEBUG 13: Portfolio summary rendered")
                     except Exception as e:
                         st.error(f"Error rendering portfolio summary: {e}")
                         import traceback
