@@ -64,13 +64,29 @@ jobs:
           # The main.py script handles 'next' session detection and auto-generates comparison for PM
           python main.py --session ${{ steps.session.outputs.session }}
 
+      - name: List generated files
+        run: |
+          echo "=== Output folder contents ==="
+          ls -la output/ || echo "Output folder does not exist"
+          echo ""
+          echo "=== Report files ==="
+          ls -la output/report_*.txt 2>/dev/null || echo "No report files found"
+          echo ""
+          echo "=== Comparison files ==="
+          ls -la output/comparison_*.json 2>/dev/null || echo "No comparison files found"
+
       - name: Commit and push new reports
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
           # Add report files and comparison files (not raw data)
-          git add output/report_*.txt output/comparison_*.json 2>/dev/null || true
+          git add output/report_*.txt 2>/dev/null || echo "No report files to add"
+          git add output/comparison_*.json 2>/dev/null || echo "No comparison files to add"
+
+          # Show what's staged
+          echo "=== Staged files ==="
+          git diff --staged --name-only
 
           # Check if there are changes to commit
           if git diff --staged --quiet; then
