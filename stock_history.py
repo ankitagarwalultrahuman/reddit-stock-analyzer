@@ -40,6 +40,16 @@ ETF_MAPPINGS = {
     "NIFTY 50 ETF": "NIFTYBEES.NS",
 }
 
+# Special ticker mappings for stocks with unusual symbols
+SPECIAL_TICKER_MAPPINGS = {
+    "BAJAJ-AUTO": "BAJAJ-AUTO.NS",
+    "BAJAJAUTO": "BAJAJ-AUTO.NS",
+    "M&M": "M&M.NS",
+    "MM": "M&M.NS",
+    "M&MFIN": "M&MFIN.NS",
+    "L&TFH": "L&TFH.NS",
+}
+
 
 def init_cache_db():
     """Initialize SQLite cache database."""
@@ -70,17 +80,26 @@ def get_nse_symbol(ticker: str) -> str:
     Handles:
     - Already has .NS suffix
     - ETF names (SILVERBEES, NIFTYBEES)
+    - Special tickers (BAJAJ-AUTO, M&M)
     - Full company names
     - Common abbreviations
     """
     ticker_upper = ticker.upper().strip()
 
-    # Check ETF mappings first
+    # Check special ticker mappings first (BAJAJ-AUTO, M&M, etc.)
+    if ticker_upper in SPECIAL_TICKER_MAPPINGS:
+        return SPECIAL_TICKER_MAPPINGS[ticker_upper]
+
+    # Check ETF mappings
     if ticker_upper in ETF_MAPPINGS:
         return ETF_MAPPINGS[ticker_upper]
 
     # Normalize using portfolio_analyzer mappings
     normalized = normalize_ticker(ticker_upper)
+
+    # Check special mappings again after normalization
+    if normalized in SPECIAL_TICKER_MAPPINGS:
+        return SPECIAL_TICKER_MAPPINGS[normalized]
 
     # Check if already has suffix
     if normalized.endswith(".NS") or normalized.endswith(".BO"):
@@ -107,7 +126,8 @@ def get_cached_data(ticker: str) -> Optional[pd.DataFrame]:
 
     if row:
         try:
-            return pd.read_json(row[0])
+            from io import StringIO
+            return pd.read_json(StringIO(row[0]))
         except Exception:
             return None
     return None
