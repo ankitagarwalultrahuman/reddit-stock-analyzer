@@ -107,3 +107,17 @@ MIN_MENTIONS_FOR_SIGNAL = 5  # Minimum Reddit mentions to analyze
 # Signal Tracking settings
 SIGNAL_TRACKING_ENABLED = True  # Enable signal storage and accuracy tracking
 SIGNAL_RETENTION_DAYS = 90  # Days to keep signal history
+
+# Watchlist Scanner settings
+DEFAULT_WATCHLIST = "NIFTY50"  # Default watchlist for scanning
+SCREENER_MAX_WORKERS = 5  # Parallel workers for scanning
+SCREENER_MIN_MATCHES = 2  # Default minimum criteria matches
+
+# Sector Tracker settings
+SECTOR_ANALYSIS_ENABLED = True
+SECTOR_CACHE_TTL = 600  # 10 minutes
+
+# Telegram Alerts
+TELEGRAM_BOT_TOKEN = get_secret("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = get_secret("TELEGRAM_CHAT_ID")
+TELEGRAM_ALERTS_ENABLED = True  # Enable/disable Telegram notifications
