@@ -54,7 +54,7 @@ SPECIAL_TICKER_MAPPINGS = {
 
     # Tickers that need different symbols on yfinance
     "NATCOPHARMA": "NATCOPHARM.NS",
-    "TATAMOTORS": "TATAMTRDVR.NS",  # DVR shares, regular might be TATAMOTORS.NS
+    # TATAMOTORS uses standard .NS suffix, no special mapping needed
     "MAZAGON": "MAZDOCK.NS",
     "KNR": "KNRCON.NS",
     "COCHINSHIP": "COCHINSHIP.NS",

@@ -412,7 +412,7 @@ def display_accuracy_stats():
                 "Avg Return (3d)": f"{metrics['avg_return_3d']}%",
             })
         df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
     else:
         st.info("No accuracy data available yet.")
 
@@ -430,7 +430,7 @@ def display_accuracy_stats():
                 "Avg Return (3d)": f"{metrics['avg_return_3d']}%",
             })
         df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
 
     # Top performers
     st.subheader("Top Performing Stocks (Based on Signals)")
@@ -446,7 +446,7 @@ def display_accuracy_stats():
                 "Accuracy": f"{perf['accuracy']}%",
             })
         df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
 
 
 def main():
@@ -532,7 +532,7 @@ def main():
                     if df is not None and not df.empty:
                         fig = create_technical_chart(df, technicals, selected_ticker)
                         if fig:
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width="stretch")
                 else:
                     st.error(f"Could not fetch data for {selected_ticker}: {stock_data.get('error', 'Unknown error')}")
 

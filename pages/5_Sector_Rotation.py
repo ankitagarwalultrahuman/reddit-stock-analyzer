@@ -261,7 +261,7 @@ def main():
 
         # Momentum chart
         fig = create_momentum_chart(metrics)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         # Rankings table
         st.markdown("### Full Rankings")
@@ -283,13 +283,13 @@ def main():
             })
 
         df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
 
     with tab3:
         st.subheader("Returns Heatmap")
 
         fig = create_returns_heatmap(metrics)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.markdown("""
         **How to read:**
@@ -330,7 +330,7 @@ def main():
                 with col2:
                     # RSI gauge
                     fig = create_rsi_gauge(sector_data.avg_rsi, selected_sector)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
                 # Top performers in sector
                 st.markdown("### Top Performers")
@@ -346,7 +346,7 @@ def main():
     # Sidebar - Quick Actions
     st.sidebar.header("Quick Actions")
 
-    if st.sidebar.button("Send to Telegram", use_container_width=True):
+    if st.sidebar.button("Send to Telegram", width="stretch"):
         from telegram_alerts import send_sector_alert, is_telegram_configured
         if is_telegram_configured():
             if send_sector_alert(signals):

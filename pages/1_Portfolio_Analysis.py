@@ -173,7 +173,7 @@ def render_holdings_table(analyzed_holdings: list):
 
     st.dataframe(
         display_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Stock": st.column_config.TextColumn("Stock", width="medium"),
@@ -230,7 +230,7 @@ def render_sentiment_chart(analyzed_holdings: list):
             margin=dict(l=20, r=20, t=30, b=20),
             showlegend=True
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 
 def render_risk_alerts(analyzed_holdings: list):
@@ -383,7 +383,7 @@ def render_mf_analysis(report_content: str):
         })
 
     df = pd.DataFrame(mf_summary)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 
     st.markdown("---")
 
@@ -422,7 +422,7 @@ def render_mf_analysis(report_content: str):
 
             st.dataframe(
                 underlying_df[["Stock", "Sentiment", "Reddit Mentions"]],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
