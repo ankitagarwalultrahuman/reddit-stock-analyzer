@@ -16,10 +16,28 @@ from config import (
 
 def make_request(url: str, retries: int = 3) -> Optional[dict]:
     """Make a request to Reddit with retry logic and rate limiting."""
-    headers = {"User-Agent": USER_AGENT}
+    # Use comprehensive browser-like headers to avoid blocks
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+    }
 
     for attempt in range(retries):
         try:
+            # Add a small random delay to appear more human-like
+            if attempt > 0:
+                time.sleep(REQUEST_DELAY * (attempt + 1))
+
             response = requests.get(url, headers=headers, timeout=30)
 
             if response.status_code == 200:
@@ -30,8 +48,12 @@ def make_request(url: str, retries: int = 3) -> Optional[dict]:
                 print(f"  Rate limited. Waiting {wait_time}s...")
                 time.sleep(wait_time)
             elif response.status_code == 403:
-                print(f"  Access forbidden for {url}")
-                return None
+                print(f"  Access forbidden for {url} (attempt {attempt + 1}/{retries})")
+                # Try with old.reddit.com on retry
+                if attempt < retries - 1 and "www.reddit.com" in url:
+                    url = url.replace("www.reddit.com", "old.reddit.com")
+                    print(f"  Retrying with old.reddit.com...")
+                    time.sleep(REQUEST_DELAY)
             else:
                 print(f"  HTTP {response.status_code} for {url}")
 

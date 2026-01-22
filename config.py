@@ -39,12 +39,13 @@ SUBREDDITS = [
 # Scraping limits
 POSTS_PER_SUBREDDIT = 15  # Top posts to fetch per subreddit (before filtering)
 COMMENTS_PER_POST = 10     # Top comments to fetch per post
-REQUEST_DELAY = 6          # Seconds between requests (rate limiting)
+REQUEST_DELAY = 8          # Seconds between requests (increased for cloud servers)
 MAX_POST_AGE_HOURS = 48    # Only include posts from the last N hours
 
 # Reddit API endpoints (no auth required)
-REDDIT_BASE_URL = "https://www.reddit.com"
-USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+# Using old.reddit.com as it's less restrictive for scraping
+REDDIT_BASE_URL = "https://old.reddit.com"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
 # Output settings
 OUTPUT_DIR = "output"
