@@ -143,7 +143,7 @@ def main():
     st.sidebar.markdown("---")
 
     # Scan button
-    scan_clicked = st.sidebar.button("Run Scan", type="primary", use_container_width=True)
+    scan_clicked = st.sidebar.button("Run Scan", type="primary", width="stretch")
 
     # Send to Telegram option
     send_telegram = st.sidebar.checkbox("Send results to Telegram", value=False)
@@ -193,7 +193,7 @@ def main():
                     })
 
                 df = pd.DataFrame(df_data)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, width="stretch", hide_index=True)
 
                 # Detailed results
                 st.subheader("Detailed Analysis")
@@ -234,7 +234,7 @@ def main():
         with col1:
             st.markdown("### Bullish Setups")
 
-            if st.button("Oversold NIFTY50", use_container_width=True):
+            if st.button("Oversold NIFTY50", width="stretch"):
                 with st.spinner("Scanning..."):
                     from stock_screener import quick_scan_nifty50
                     results = quick_scan_nifty50("oversold_reversal")
@@ -246,7 +246,7 @@ def main():
                 else:
                     st.info("No oversold stocks found")
 
-            if st.button("Strong Buy Signals", use_container_width=True):
+            if st.button("Strong Buy Signals", width="stretch"):
                 with st.spinner("Scanning..."):
                     from stock_screener import quick_scan_nifty50
                     results = quick_scan_nifty50("strong_buy")
@@ -258,7 +258,7 @@ def main():
                 else:
                     st.info("No strong buy signals found")
 
-            if st.button("Trend Following", use_container_width=True):
+            if st.button("Trend Following", width="stretch"):
                 with st.spinner("Scanning..."):
                     from stock_screener import quick_scan_nifty50
                     results = quick_scan_nifty50("trend_following")
@@ -273,7 +273,7 @@ def main():
         with col2:
             st.markdown("### Risk Alerts")
 
-            if st.button("Overbought Warnings", use_container_width=True):
+            if st.button("Overbought Warnings", width="stretch"):
                 with st.spinner("Scanning..."):
                     from stock_screener import quick_scan_nifty50
                     results = quick_scan_nifty50("overbought_warning")
@@ -285,7 +285,7 @@ def main():
                 else:
                     st.info("No overbought warnings")
 
-            if st.button("Downtrending Stocks", use_container_width=True):
+            if st.button("Downtrending Stocks", width="stretch"):
                 with st.spinner("Scanning..."):
                     from stock_screener import quick_scan_nifty50
                     results = quick_scan_nifty50("downtrend")

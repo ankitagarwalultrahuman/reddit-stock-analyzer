@@ -338,7 +338,7 @@ def render_price_chart(stocks_data: dict[str, pd.DataFrame]):
     fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.5,
                   annotation_text="Starting Point", annotation_position="right")
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def render_metrics_dashboard(metrics: dict[str, dict]):
