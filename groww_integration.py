@@ -79,9 +79,9 @@ class GrowwClient:
                 for h in response.get("holdings", []):
                     holding = Holding(
                         isin=h.get("isin", ""),
-                        trading_symbol=h.get("trading_symbol", ""),
+                        trading_symbol=h.get("trading_symbol", h.get("tradingSymbol", "")),
                         quantity=float(h.get("quantity", 0)),
-                        average_price=float(h.get("average_price", 0)),
+                        average_price=float(h.get("average_price", h.get("averagePrice", 0))),
                     )
                     holding.invested_value = holding.quantity * holding.average_price
                     holdings.append(holding)
@@ -93,7 +93,15 @@ class GrowwClient:
                 return self._get_holdings_direct()
 
         except Exception as e:
-            print(f"Error fetching holdings: {e}")
+            error_msg = str(e).lower()
+            if "forbidden" in error_msg or "401" in error_msg or "403" in error_msg:
+                print(f"Groww API access denied. This could be due to:")
+                print("  1. IP restrictions on your API token")
+                print("  2. Token permissions not enabled for portfolio access")
+                print("  3. Token expired - try regenerating from Groww Trade API")
+                print("\nUsing manual portfolio entry instead.")
+            else:
+                print(f"Error fetching holdings: {e}")
             return []
 
     def _get_holdings_direct(self) -> list[Holding]:
