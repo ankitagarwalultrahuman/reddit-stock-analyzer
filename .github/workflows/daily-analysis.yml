@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       session:
-        description: 'Session (AM/PM/auto)'
+        description: 'Session (AM/PM/auto/next)'
         required: false
-        default: 'auto'
+        default: 'next'
 
 jobs:
   analyze:
@@ -40,10 +40,10 @@ jobs:
       - name: Determine session
         id: session
         run: |
-          # Use manual input if provided, otherwise auto-detect based on UTC hour
-          if [ "${{ github.event.inputs.session }}" != "" ] && [ "${{ github.event.inputs.session }}" != "auto" ]; then
-            echo "session=${{ github.event.inputs.session }}" >> $GITHUB_OUTPUT
-          else
+          INPUT_SESSION="${{ github.event.inputs.session }}"
+
+          # For scheduled runs or if input is auto, detect based on UTC hour
+          if [ -z "$INPUT_SESSION" ] || [ "$INPUT_SESSION" == "auto" ]; then
             HOUR=$(date -u +%H)
             # Before 8 UTC (1:30 PM IST) is AM session, after is PM session
             if [ $HOUR -lt 8 ]; then
@@ -51,6 +51,9 @@ jobs:
             else
               echo "session=PM" >> $GITHUB_OUTPUT
             fi
+          else
+            # Use the provided input (AM, PM, or next)
+            echo "session=$INPUT_SESSION" >> $GITHUB_OUTPUT
           fi
           echo "Determined session: $(cat $GITHUB_OUTPUT | grep session)"
 
@@ -58,15 +61,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          # The main.py script handles 'next' session detection and auto-generates comparison for PM
           python main.py --session ${{ steps.session.outputs.session }}
-
-      - name: Generate comparison (PM session only)
-        if: steps.session.outputs.session == 'PM'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          echo "Generating AM vs PM comparison..."
-          python comparison_generator.py || echo "Comparison generation skipped (AM report may not exist)"
 
       - name: Commit and push new reports
         run: |

@@ -38,6 +38,33 @@ def get_date_str() -> str:
     return get_ist_now().strftime('%Y%m%d')
 
 
+def get_next_session() -> str:
+    """
+    Smart session detection based on existing reports.
+
+    Logic:
+    - If no reports exist for today → AM
+    - If only AM exists → PM
+    - If PM exists → PM (replace)
+    """
+    date_str = get_date_str()
+    am_file = f"{OUTPUT_DIR}/report_{date_str}_{SESSION_AM}.txt"
+    pm_file = f"{OUTPUT_DIR}/report_{date_str}_{SESSION_PM}.txt"
+
+    am_exists = os.path.exists(am_file)
+    pm_exists = os.path.exists(pm_file)
+
+    if not am_exists and not pm_exists:
+        print(f"No reports exist for {date_str} - creating AM report")
+        return SESSION_AM
+    elif am_exists and not pm_exists:
+        print(f"AM report exists for {date_str} - creating PM report")
+        return SESSION_PM
+    else:
+        print(f"PM report exists for {date_str} - replacing PM report")
+        return SESSION_PM
+
+
 def save_raw_data(all_data: dict, timestamp: str) -> str:
     """Save raw scraped data to JSON for debugging/archival."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -72,11 +99,28 @@ def parse_args():
     )
     parser.add_argument(
         "--session",
-        choices=["AM", "PM", "auto"],
+        choices=["AM", "PM", "auto", "next"],
         default="auto",
-        help="Session type: AM (morning), PM (evening), or auto (detect based on IST time)"
+        help="Session type: AM (morning), PM (evening), auto (detect based on IST time), or next (smart detection based on existing reports)"
     )
     return parser.parse_args()
+
+
+def run_comparison_generator():
+    """Run the comparison generator after PM report is created."""
+    print("\n[4/4] GENERATING AM vs PM COMPARISON")
+    print("-" * 40)
+    try:
+        from comparison_generator import generate_comparison_for_date, save_comparison, get_ist_today
+        date_str = get_ist_today()
+        comparison = generate_comparison_for_date(date_str)
+        if comparison:
+            output_file = save_comparison(comparison, date_str)
+            print(f"Comparison saved to: {output_file}")
+        else:
+            print("Comparison could not be generated (AM report may not exist)")
+    except Exception as e:
+        print(f"Warning: Could not generate comparison: {e}")
 
 
 def main():
@@ -86,6 +130,8 @@ def main():
     # Determine session
     if args.session == "auto":
         session = get_session_suffix()
+    elif args.session == "next":
+        session = get_next_session()
     else:
         session = args.session
 
@@ -145,6 +191,10 @@ def main():
     report_file = save_report(report, session)
 
     print(f"Report saved to: {report_file}")
+
+    # Generate comparison if this is a PM session
+    if session == SESSION_PM:
+        run_comparison_generator()
 
     # Print the report
     print("\n" + "=" * 80)
