@@ -293,6 +293,87 @@ def fetch_stock_history(ticker: str, days: int = 30, force_refresh: bool = False
         return pd.DataFrame()
 
 
+def get_current_price(ticker: str) -> dict:
+    """
+    Get real-time/current price for a stock using yfinance fast_info.
+
+    This returns the latest available price (more current than history() which is EOD).
+
+    Args:
+        ticker: NSE stock symbol (e.g., "RELIANCE", "TCS")
+
+    Returns:
+        dict with:
+        - current_price: Latest market price
+        - previous_close: Previous day's closing price
+        - change_percent: Percentage change from previous close
+        - volume: Current day's volume (if available)
+        - success: Whether the fetch succeeded
+    """
+    if yf is None:
+        return {"success": False, "error": "yfinance not installed"}
+
+    yf_symbol = get_nse_symbol(ticker)
+
+    try:
+        stock = yf.Ticker(yf_symbol)
+
+        # Try fast_info first (faster, less data)
+        try:
+            info = stock.fast_info
+            current_price = info.last_price
+            previous_close = info.previous_close
+
+            if current_price and previous_close:
+                change_percent = ((current_price - previous_close) / previous_close) * 100
+                return {
+                    "success": True,
+                    "ticker": ticker,
+                    "current_price": round(current_price, 2),
+                    "previous_close": round(previous_close, 2),
+                    "change_percent": round(change_percent, 2),
+                    "volume": getattr(info, 'last_volume', None),
+                }
+        except Exception:
+            pass
+
+        # Fallback to regular info
+        info = stock.info
+        current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+        previous_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
+
+        if current_price and previous_close:
+            change_percent = ((current_price - previous_close) / previous_close) * 100
+            return {
+                "success": True,
+                "ticker": ticker,
+                "current_price": round(current_price, 2),
+                "previous_close": round(previous_close, 2),
+                "change_percent": round(change_percent, 2),
+                "volume": info.get('volume'),
+            }
+
+        # Last fallback: use history with period="1d"
+        df = stock.history(period="5d")
+        if not df.empty:
+            current_price = float(df['Close'].iloc[-1])
+            previous_close = float(df['Close'].iloc[-2]) if len(df) > 1 else current_price
+            change_percent = ((current_price - previous_close) / previous_close) * 100 if previous_close else 0
+            return {
+                "success": True,
+                "ticker": ticker,
+                "current_price": round(current_price, 2),
+                "previous_close": round(previous_close, 2),
+                "change_percent": round(change_percent, 2),
+                "volume": int(df['Volume'].iloc[-1]) if 'Volume' in df.columns else None,
+            }
+
+        return {"success": False, "error": "Could not fetch price data"}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def fetch_multiple_stocks(tickers: list[str], days: int = 30) -> dict[str, pd.DataFrame]:
     """
     Fetch historical data for multiple stocks.

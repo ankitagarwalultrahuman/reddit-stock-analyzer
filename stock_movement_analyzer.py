@@ -126,7 +126,7 @@ def detect_significant_movements(
     Returns:
         List of StockMovement objects for stocks that moved significantly
     """
-    from stock_history import fetch_stock_history
+    from stock_history import get_current_price, fetch_stock_history
     from portfolio_analyzer import normalize_ticker
 
     movements = []
@@ -134,29 +134,34 @@ def detect_significant_movements(
     for ticker in tickers:
         try:
             normalized = normalize_ticker(ticker)
-            # Use force_refresh=True to get real-time prices, not cached data
-            df = fetch_stock_history(normalized, days=5, force_refresh=True)
 
-            if df.empty or len(df) < 2:
+            # Use get_current_price for real-time prices (not EOD historical data)
+            price_data = get_current_price(normalized)
+
+            if not price_data.get("success"):
+                print(f"Could not get price for {ticker}: {price_data.get('error')}")
                 continue
 
-            current_price = float(df['Close'].iloc[-1])
-            previous_price = float(df['Close'].iloc[-2])
+            current_price = price_data["current_price"]
+            previous_price = price_data["previous_close"]
+            change_percent = price_data["change_percent"]
 
             if previous_price == 0:
                 continue
 
-            change_percent = ((current_price - previous_price) / previous_price) * 100
-
             # Check if movement exceeds threshold
             if abs(change_percent) >= threshold:
-                # Calculate volume ratio if available
+                # Calculate volume ratio from historical data
                 volume_ratio = 1.0
-                if 'Volume' in df.columns:
-                    current_vol = float(df['Volume'].iloc[-1])
-                    avg_vol = float(df['Volume'].mean())
-                    if avg_vol > 0:
-                        volume_ratio = current_vol / avg_vol
+                try:
+                    df = fetch_stock_history(normalized, days=10)
+                    if not df.empty and 'Volume' in df.columns:
+                        current_vol = price_data.get("volume") or float(df['Volume'].iloc[-1])
+                        avg_vol = float(df['Volume'].mean())
+                        if avg_vol > 0:
+                            volume_ratio = current_vol / avg_vol
+                except Exception:
+                    pass
 
                 movements.append(StockMovement(
                     ticker=normalized,

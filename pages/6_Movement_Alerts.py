@@ -193,18 +193,18 @@ with tab2:
 
     if analyze_single and single_ticker:
         with st.spinner(f"Analyzing {single_ticker}..."):
-            # Get price data (force_refresh=True for real-time prices)
-            from stock_history import fetch_stock_history, calculate_performance_metrics
+            # Get real-time price data
+            from stock_history import get_current_price, fetch_stock_history, calculate_performance_metrics
 
-            df = fetch_stock_history(single_ticker, days=10, force_refresh=True)
+            price_data = get_current_price(single_ticker)
 
-            if df.empty:
-                st.error(f"Could not fetch data for {single_ticker}")
+            if not price_data.get("success"):
+                st.error(f"Could not fetch data for {single_ticker}: {price_data.get('error', 'Unknown error')}")
             else:
-                # Calculate movement
-                current = float(df['Close'].iloc[-1])
-                previous = float(df['Close'].iloc[-2])
-                change_pct = ((current - previous) / previous) * 100
+                # Get real-time prices
+                current = price_data["current_price"]
+                previous = price_data["previous_close"]
+                change_pct = price_data["change_percent"]
 
                 # Display price info
                 col1, col2, col3 = st.columns(3)
@@ -213,7 +213,9 @@ with tab2:
                 with col2:
                     st.metric("Previous Close", f"₹{previous:.2f}")
                 with col3:
-                    metrics = calculate_performance_metrics(df)
+                    # Get historical data for 5-day return
+                    df = fetch_stock_history(single_ticker, days=10)
+                    metrics = calculate_performance_metrics(df) if not df.empty else {}
                     st.metric("5-Day Return", f"{metrics.get('total_return', 0):.2f}%")
 
                 # Get context and analyze
