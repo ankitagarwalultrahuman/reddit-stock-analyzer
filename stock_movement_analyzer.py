@@ -451,34 +451,15 @@ TECHNICAL INDICATORS:
 - Technical Bias: {tech.get('technical_bias', 'N/A')}
 - Price vs 50 EMA: {tech.get('price_vs_ema50', 'N/A')}"""
 
-        prompt = f"""You are a stock market analyst. Search the web to find why {company_name} ({movement.ticker}) stock on NSE India {direction_word} {abs(movement.change_percent):.1f}% today.
+        prompt = f"""{company_name} ({movement.ticker}) on NSE India {direction_word} {abs(movement.change_percent):.1f}% today.
 
-STOCK MOVEMENT DATA:
-- Stock: {movement.ticker} ({company_name})
-- Exchange: NSE India
 - Previous Close: ₹{movement.previous_price:.2f}
 - Current Price: ₹{movement.current_price:.2f}
 - Change: {movement.change_percent:+.2f}%
-- Direction: {direction}
-- Volume: {movement.volume_ratio:.1f}x average volume
+- Volume: {movement.volume_ratio:.1f}x average
 {sector_info}
-{tech_info}
 
-SEARCH AND ANALYZE:
-1. Search for latest news about {company_name} or {movement.ticker} from today
-2. Check if there are any company announcements, earnings, deals, or management changes
-3. Look for sector-wide trends affecting this stock (banking sector rally, IT selloff, etc.)
-4. Check broader market factors (NIFTY movement, FII/DII activity, global cues)
-5. Look for any regulatory or policy changes affecting the company/sector
-6. Check if this is part of a larger market trend or sector rotation
-
-Based on your research, provide your analysis in this EXACT format:
-
-SMS: [One line summary under 140 characters - the main reason for the price movement]
-DETAIL: [2-4 sentences explaining the reason with specific news/events/sources you found. Mention if it's company-specific, sector-driven, or market-wide.]
-CONFIDENCE: [high/medium/low - based on how clear the reason is from your research]
-
-Remember: Search the web for current news. Do not make assumptions without finding actual news or events."""
+Give me a ONE LINE summary (under 160 characters) explaining why this stock moved, based on news and coverage from the past 72 hours. Just the reason, no preamble."""
 
         print(f"Calling Perplexity API for {movement.ticker}...")
 
@@ -488,46 +469,43 @@ Remember: Search the web for current news. Do not make assumptions without findi
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a financial analyst specializing in Indian stock markets. Search the web for real-time news and provide accurate analysis of stock price movements. Always cite your sources."
+                    "content": "You are an experienced trader in Indian stock markets, with strong technical and fundamental analysis background. Give a one line summary behind the movement in stock prices by analysing the news and coverage on this stock or related sector and stocks from the past 72 hours. Be direct and concise - no introductions, no formatting, just the key reason in one line."
                 },
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=1500,
-            temperature=0.2  # Lower temperature for more factual responses
+            max_tokens=300,
+            temperature=0.1  # Very low temperature for concise factual responses
         )
 
-        # Parse response
-        response_text = response.choices[0].message.content
+        # Parse response - expecting a simple one-liner
+        response_text = response.choices[0].message.content.strip()
         print(f"Perplexity response received for {movement.ticker}")
 
-        sms_summary = ""
-        detailed = ""
-        confidence = "medium"
+        # Clean up the response - remove any markdown, citations, or extra formatting
+        # Take the first meaningful line if multiple lines returned
+        lines = [l.strip() for l in response_text.split("\n") if l.strip()]
 
-        lines = response_text.split("\n")
-        for i, line in enumerate(lines):
-            if line.strip().startswith("SMS:"):
-                sms_summary = line.split("SMS:", 1)[1].strip()[:140]
-            elif line.strip().startswith("DETAIL:"):
-                # Get detail which might span multiple lines
-                detailed = line.split("DETAIL:", 1)[1].strip()
-                # Check if next lines are continuation (not SMS or CONFIDENCE)
-                for next_line in lines[i+1:]:
-                    if next_line.strip().startswith(("SMS:", "CONFIDENCE:")):
-                        break
-                    if next_line.strip():
-                        detailed += " " + next_line.strip()
-            elif line.strip().startswith("CONFIDENCE:"):
-                conf = line.split("CONFIDENCE:", 1)[1].strip().lower()
-                if conf in ["high", "medium", "low"]:
-                    confidence = conf
+        # Get the main analysis line (skip any that start with "Based on" or similar preambles)
+        analysis_line = response_text
+        for line in lines:
+            # Skip preamble lines
+            if line.lower().startswith(("based on", "according to", "here's", "here is", "the ")):
+                continue
+            # Skip citation-only lines like [1], [2]
+            if line.startswith("[") and line.endswith("]"):
+                continue
+            analysis_line = line
+            break
 
-        # Fallback if parsing failed
-        if not sms_summary:
-            sms_summary = f"{movement.ticker} {direction} {abs(movement.change_percent):.1f}% today"
+        # Remove citation markers like [1], [2] from the text
+        import re
+        analysis_line = re.sub(r'\[\d+\]', '', analysis_line).strip()
 
-        if not detailed:
-            detailed = response_text[:500]
+        # Truncate to 160 chars for SMS
+        sms_summary = analysis_line[:160] if analysis_line else f"{movement.ticker} moved {movement.change_percent:+.1f}% today"
+
+        # Use the full response as detailed (cleaned up)
+        detailed = re.sub(r'\[\d+\]', '', response_text).strip()
 
         sources = ["perplexity_search"]
         if context.get("technicals"):
@@ -543,7 +521,7 @@ Remember: Search the web for current news. Do not make assumptions without findi
             direction=movement.direction,
             summary=sms_summary,
             detailed_reason=detailed,
-            confidence=confidence,
+            confidence="high",  # Perplexity with web search is generally reliable
             sources=sources
         )
 
