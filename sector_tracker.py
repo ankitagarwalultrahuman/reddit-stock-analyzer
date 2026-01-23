@@ -35,7 +35,14 @@ class SectorMetrics:
     sector: str
     stock_count: int
 
-    # Performance metrics (averaged across stocks)
+    # Performance metrics - Monthly timeframes (averaged across stocks)
+    avg_return_1w: float = 0.0   # 1 week (5 trading days)
+    avg_return_1m: float = 0.0   # 1 month (20 trading days)
+    avg_return_2m: float = 0.0   # 2 months (40 trading days)
+    avg_return_3m: float = 0.0   # 3 months (60 trading days)
+    avg_return_6m: float = 0.0   # 6 months (120 trading days)
+
+    # Legacy aliases for backward compatibility
     avg_return_1d: float = 0.0
     avg_return_5d: float = 0.0
     avg_return_20d: float = 0.0
@@ -70,17 +77,25 @@ class StockPerformance:
     """Performance data for a single stock."""
     ticker: str
     current_price: float
-    return_1d: float
-    return_5d: float
-    return_20d: float
-    rsi: Optional[float]
-    technical_bias: str
+    return_1w: float = 0.0   # 1 week
+    return_1m: float = 0.0   # 1 month
+    return_2m: float = 0.0   # 2 months
+    return_3m: float = 0.0   # 3 months
+    return_6m: float = 0.0   # 6 months
+    rsi: Optional[float] = None
+    technical_bias: str = "neutral"
+
+    # Legacy aliases
+    return_1d: float = 0.0
+    return_5d: float = 0.0
+    return_20d: float = 0.0
 
 
 def analyze_stock_for_sector(ticker: str, debug: bool = False) -> Optional[StockPerformance]:
-    """Analyze a single stock for sector analysis."""
+    """Analyze a single stock for sector analysis with monthly timeframes."""
     try:
-        df = fetch_stock_history(ticker, days=60)
+        # Fetch 150 days for 6-month analysis
+        df = fetch_stock_history(ticker, days=150)
 
         if debug:
             print(f"[DEBUG] {ticker}: df.empty={df.empty}, len={len(df)}, cols={df.columns.tolist() if not df.empty else 'N/A'}")
@@ -107,31 +122,43 @@ def analyze_stock_for_sector(ticker: str, debug: bool = False) -> Optional[Stock
             return None
 
         close = df['Close']
-        current = float(close.iloc[-1])  # Convert to native Python float
+        current = float(close.iloc[-1])
 
-        # Safe return calculations
-        return_1d = 0.0
-        return_5d = 0.0
-        return_20d = 0.0
+        # Monthly timeframe return calculations
+        return_1w = 0.0   # 1 week = 5 trading days
+        return_1m = 0.0   # 1 month = 20 trading days
+        return_2m = 0.0   # 2 months = 40 trading days
+        return_3m = 0.0   # 3 months = 60 trading days
+        return_6m = 0.0   # 6 months = 120 trading days
 
-        if len(close) > 1 and float(close.iloc[-2]) != 0:
-            return_1d = ((current / float(close.iloc[-2])) - 1) * 100
         if len(close) > 5 and float(close.iloc[-5]) != 0:
-            return_5d = ((current / float(close.iloc[-5])) - 1) * 100
+            return_1w = ((current / float(close.iloc[-5])) - 1) * 100
         if len(close) > 20 and float(close.iloc[-20]) != 0:
-            return_20d = ((current / float(close.iloc[-20])) - 1) * 100
+            return_1m = ((current / float(close.iloc[-20])) - 1) * 100
+        if len(close) > 40 and float(close.iloc[-40]) != 0:
+            return_2m = ((current / float(close.iloc[-40])) - 1) * 100
+        if len(close) > 60 and float(close.iloc[-60]) != 0:
+            return_3m = ((current / float(close.iloc[-60])) - 1) * 100
+        if len(close) > 120 and float(close.iloc[-120]) != 0:
+            return_6m = ((current / float(close.iloc[-120])) - 1) * 100
 
         if debug:
-            print(f"[DEBUG] {ticker}: current={current}, 1d={return_1d:.2f}%, 5d={return_5d:.2f}%")
+            print(f"[DEBUG] {ticker}: current={current}, 1W={return_1w:.2f}%, 1M={return_1m:.2f}%")
 
         return StockPerformance(
             ticker=ticker,
             current_price=round(current, 2),
-            return_1d=round(float(return_1d), 2),
-            return_5d=round(float(return_5d), 2),
-            return_20d=round(float(return_20d), 2),
+            return_1w=round(float(return_1w), 2),
+            return_1m=round(float(return_1m), 2),
+            return_2m=round(float(return_2m), 2),
+            return_3m=round(float(return_3m), 2),
+            return_6m=round(float(return_6m), 2),
             rsi=float(signals.rsi) if signals.rsi else None,
             technical_bias=signals.technical_bias or "neutral",
+            # Legacy fields
+            return_1d=round(float(return_1w / 5), 2) if return_1w else 0.0,
+            return_5d=round(float(return_1w), 2),
+            return_20d=round(float(return_1m), 2),
         )
 
     except Exception as e:
@@ -192,10 +219,12 @@ def analyze_sector(sector: str, max_workers: int = 5, use_parallel: bool = True)
         print(f"[SECTOR] {sector}: WARNING - No stocks could be analyzed!")
         return SectorMetrics(sector=sector, stock_count=len(stocks))
 
-    # Calculate averages
-    avg_1d = sum(p.return_1d for p in performances) / len(performances)
-    avg_5d = sum(p.return_5d for p in performances) / len(performances)
-    avg_20d = sum(p.return_20d for p in performances) / len(performances)
+    # Calculate monthly averages
+    avg_1w = sum(p.return_1w for p in performances) / len(performances)
+    avg_1m = sum(p.return_1m for p in performances) / len(performances)
+    avg_2m = sum(p.return_2m for p in performances) / len(performances)
+    avg_3m = sum(p.return_3m for p in performances) / len(performances)
+    avg_6m = sum(p.return_6m for p in performances) / len(performances)
     avg_rsi = sum(p.rsi for p in performances if p.rsi) / len([p for p in performances if p.rsi]) if any(p.rsi for p in performances) else 50
 
     # Count technical biases
@@ -204,14 +233,14 @@ def analyze_sector(sector: str, max_workers: int = 5, use_parallel: bool = True)
     neutral = len(performances) - bullish - bearish
 
     # Calculate momentum score (0-100)
-    # Based on: short-term returns, RSI position, and technical bias ratio
+    # Based on: monthly returns, RSI position, and technical bias ratio
     momentum_score = 50  # Base
 
-    # Return contribution (max +/- 25)
-    if avg_5d > 0:
-        momentum_score += min(avg_5d * 2.5, 25)
+    # Return contribution based on 1-month performance (max +/- 25)
+    if avg_1m > 0:
+        momentum_score += min(avg_1m * 2.5, 25)
     else:
-        momentum_score += max(avg_5d * 2.5, -25)
+        momentum_score += max(avg_1m * 2.5, -25)
 
     # RSI contribution (max +/- 15)
     if avg_rsi < 40:
@@ -234,18 +263,25 @@ def analyze_sector(sector: str, max_workers: int = 5, use_parallel: bool = True)
     else:
         momentum_trend = "neutral"
 
-    # Sort for top/bottom performers (ensure native Python types)
-    sorted_by_return = sorted(performances, key=lambda x: x.return_5d, reverse=True)
-    top_stocks = [(p.ticker, float(p.return_5d)) for p in sorted_by_return[:3]]
-    bottom_stocks = [(p.ticker, float(p.return_5d)) for p in sorted_by_return[-3:]]
+    # Sort for top/bottom performers by 1-month return
+    sorted_by_return = sorted(performances, key=lambda x: x.return_1m, reverse=True)
+    top_stocks = [(p.ticker, float(p.return_1m)) for p in sorted_by_return[:3]]
+    bottom_stocks = [(p.ticker, float(p.return_1m)) for p in sorted_by_return[-3:]]
 
     return SectorMetrics(
         sector=sector,
         stock_count=len(performances),
-        avg_return_1d=round(avg_1d, 2),
-        avg_return_5d=round(avg_5d, 2),
-        avg_return_20d=round(avg_20d, 2),
-        avg_return_60d=0,  # Would need more data
+        # Monthly timeframes
+        avg_return_1w=round(avg_1w, 2),
+        avg_return_1m=round(avg_1m, 2),
+        avg_return_2m=round(avg_2m, 2),
+        avg_return_3m=round(avg_3m, 2),
+        avg_return_6m=round(avg_6m, 2),
+        # Legacy fields for backward compatibility
+        avg_return_1d=round(avg_1w / 5, 2) if avg_1w else 0,
+        avg_return_5d=round(avg_1w, 2),
+        avg_return_20d=round(avg_1m, 2),
+        avg_return_60d=round(avg_3m, 2),
         avg_rsi=round(avg_rsi, 1),
         bullish_count=bullish,
         bearish_count=bearish,
@@ -296,8 +332,8 @@ def get_sector_rotation_signals(sector_metrics: list[SectorMetrics]) -> dict:
     # Sectors losing momentum
     losing = [s for s in sector_metrics if s.momentum_trend == "losing"]
 
-    # Top performing (by 5-day return)
-    sorted_by_return = sorted(sector_metrics, key=lambda x: x.avg_return_5d, reverse=True)
+    # Top performing (by 1-month return)
+    sorted_by_return = sorted(sector_metrics, key=lambda x: x.avg_return_1m, reverse=True)
     top_performing = sorted_by_return[:3]
     worst_performing = sorted_by_return[-3:]
 
@@ -314,7 +350,7 @@ def get_sector_rotation_signals(sector_metrics: list[SectorMetrics]) -> dict:
         top_gain = gaining[0]
         recommendations.append(
             f"ROTATE INTO: {top_gain.sector} sector is gaining momentum "
-            f"(score: {top_gain.momentum_score}, 5D return: {top_gain.avg_return_5d}%)"
+            f"(score: {top_gain.momentum_score}, 1M return: {top_gain.avg_return_1m:+.1f}%)"
         )
 
     if losing:
@@ -322,7 +358,7 @@ def get_sector_rotation_signals(sector_metrics: list[SectorMetrics]) -> dict:
         if top_loss:
             recommendations.append(
                 f"ROTATE OUT: {top_loss.sector} sector is losing momentum "
-                f"(score: {top_loss.momentum_score}, 5D return: {top_loss.avg_return_5d}%)"
+                f"(score: {top_loss.momentum_score}, 1M return: {top_loss.avg_return_1m:+.1f}%)"
             )
 
     if oversold:
@@ -331,10 +367,10 @@ def get_sector_rotation_signals(sector_metrics: list[SectorMetrics]) -> dict:
         )
 
     return {
-        "gaining_momentum": [(s.sector, float(s.momentum_score), float(s.avg_return_5d)) for s in gaining],
-        "losing_momentum": [(s.sector, float(s.momentum_score), float(s.avg_return_5d)) for s in losing],
-        "top_performing": [(s.sector, float(s.avg_return_5d)) for s in top_performing],
-        "worst_performing": [(s.sector, float(s.avg_return_5d)) for s in worst_performing],
+        "gaining_momentum": [(s.sector, float(s.momentum_score), float(s.avg_return_1m)) for s in gaining],
+        "losing_momentum": [(s.sector, float(s.momentum_score), float(s.avg_return_1m)) for s in losing],
+        "top_performing": [(s.sector, float(s.avg_return_1m)) for s in top_performing],
+        "worst_performing": [(s.sector, float(s.avg_return_1m)) for s in worst_performing],
         "oversold_sectors": [(s.sector, float(s.avg_rsi)) for s in oversold],
         "overbought_sectors": [(s.sector, float(s.avg_rsi)) for s in overbought],
         "recommendations": recommendations,

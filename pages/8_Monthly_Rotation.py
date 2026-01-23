@@ -46,8 +46,8 @@ if st.sidebar.button("🔄 Refresh Data", type="primary"):
 
 timeframe = st.sidebar.selectbox(
     "Analysis Timeframe",
-    ["Short-term (5D)", "Medium-term (20D)", "Long-term (60D)"],
-    index=1
+    ["1 Month", "2 Months", "3 Months", "6 Months"],
+    index=0
 )
 
 
@@ -95,30 +95,34 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("Sector Performance Rankings")
 
-    # Select timeframe column
-    if "Short" in timeframe:
-        sort_col = "avg_return_5d"
-        display_col = "5D Return"
-    elif "Long" in timeframe:
-        sort_col = "avg_return_60d"
-        display_col = "60D Return"
-    else:
-        sort_col = "avg_return_20d"
-        display_col = "20D Return"
+    # Select timeframe column based on monthly selection
+    if "1 Month" in timeframe:
+        sort_col = "avg_return_1m"
+        display_col = "1M"
+    elif "2 Month" in timeframe:
+        sort_col = "avg_return_2m"
+        display_col = "2M"
+    elif "3 Month" in timeframe:
+        sort_col = "avg_return_3m"
+        display_col = "3M"
+    else:  # 6 Months
+        sort_col = "avg_return_6m"
+        display_col = "6M"
 
     # Sort sectors
     sorted_sectors = sorted(sectors, key=lambda x: getattr(x, sort_col), reverse=True)
 
-    # Create ranking table
+    # Create ranking table with monthly timeframes
     ranking_data = []
     for i, s in enumerate(sorted_sectors, 1):
         ranking_data.append({
             "Rank": i,
             "Sector": s.sector,
-            "1D": f"{s.avg_return_1d:+.1f}%",
-            "5D": f"{s.avg_return_5d:+.1f}%",
-            "20D": f"{s.avg_return_20d:+.1f}%",
-            "60D": f"{s.avg_return_60d:+.1f}%",
+            "1W": f"{s.avg_return_1w:+.1f}%",
+            "1M": f"{s.avg_return_1m:+.1f}%",
+            "2M": f"{s.avg_return_2m:+.1f}%",
+            "3M": f"{s.avg_return_3m:+.1f}%",
+            "6M": f"{s.avg_return_6m:+.1f}%",
             "Momentum": f"{s.momentum_score:.0f}",
             "Trend": s.momentum_trend,
             "Avg RSI": f"{s.avg_rsi:.0f}"
@@ -126,23 +130,14 @@ with tab1:
 
     df = pd.DataFrame(ranking_data)
 
-    # Color code the trend
-    def highlight_trend(val):
-        if val == "gaining":
-            return "background-color: #90EE90"
-        elif val == "losing":
-            return "background-color: #FFB6C1"
-        return ""
-
     st.dataframe(df, hide_index=True, use_container_width=True)
 
-    # Bar chart - use the timeframe column (e.g., "5D", "20D", "60D")
-    timeframe_col = display_col.split()[0]  # "5D", "20D", or "60D"
+    # Bar chart - use the selected monthly timeframe
     fig = px.bar(
         df,
         x="Sector",
-        y=[float(x.replace('%', '').replace('+', '')) for x in df[timeframe_col]],
-        color=[float(x.replace('%', '').replace('+', '')) for x in df[timeframe_col]],
+        y=[float(x.replace('%', '').replace('+', '')) for x in df[display_col]],
+        color=[float(x.replace('%', '').replace('+', '')) for x in df[display_col]],
         color_continuous_scale="RdYlGn",
         title=f"Sector Performance ({display_col})"
     )
@@ -166,7 +161,7 @@ with tab2:
                     cols = st.columns([2, 1, 1, 1])
                     cols[0].markdown(f"**{s.sector}**")
                     cols[1].metric("Momentum", f"{s.momentum_score:.0f}")
-                    cols[2].metric("5D", f"{s.avg_return_5d:+.1f}%")
+                    cols[2].metric("1M", f"{s.avg_return_1m:+.1f}%")
                     cols[3].metric("RSI", f"{s.avg_rsi:.0f}")
 
                     # Show top stocks
@@ -188,7 +183,7 @@ with tab2:
                     cols = st.columns([2, 1, 1, 1])
                     cols[0].markdown(f"**{s.sector}**")
                     cols[1].metric("Momentum", f"{s.momentum_score:.0f}")
-                    cols[2].metric("5D", f"{s.avg_return_5d:+.1f}%")
+                    cols[2].metric("1M", f"{s.avg_return_1m:+.1f}%")
                     cols[3].metric("RSI", f"{s.avg_rsi:.0f}")
 
                     # Show bottom stocks
@@ -238,33 +233,34 @@ with tab2:
 with tab3:
     st.subheader("Sector Performance Matrix")
 
-    # Create performance matrix
+    # Create performance matrix with monthly timeframes
     matrix_data = []
     for s in sectors:
         matrix_data.append({
             "Sector": s.sector,
-            "1D": s.avg_return_1d,
-            "5D": s.avg_return_5d,
-            "20D": s.avg_return_20d,
-            "60D": s.avg_return_60d
+            "1W": s.avg_return_1w,
+            "1M": s.avg_return_1m,
+            "2M": s.avg_return_2m,
+            "3M": s.avg_return_3m,
+            "6M": s.avg_return_6m
         })
 
     matrix_df = pd.DataFrame(matrix_data)
 
-    # Heatmap
+    # Heatmap with monthly timeframes
     fig = go.Figure(data=go.Heatmap(
-        z=matrix_df[["1D", "5D", "20D", "60D"]].values,
-        x=["1D", "5D", "20D", "60D"],
+        z=matrix_df[["1W", "1M", "2M", "3M", "6M"]].values,
+        x=["1W", "1M", "2M", "3M", "6M"],
         y=matrix_df["Sector"].tolist(),
         colorscale="RdYlGn",
-        text=[[f"{v:.1f}%" for v in row] for row in matrix_df[["1D", "5D", "20D", "60D"]].values],
+        text=[[f"{v:.1f}%" for v in row] for row in matrix_df[["1W", "1M", "2M", "3M", "6M"]].values],
         texttemplate="%{text}",
         textfont={"size": 12},
         hovertemplate="Sector: %{y}<br>Timeframe: %{x}<br>Return: %{z:.2f}%<extra></extra>"
     ))
 
     fig.update_layout(
-        title="Sector Returns Heatmap",
+        title="Sector Returns Heatmap (Monthly View)",
         height=500,
         yaxis=dict(tickmode='array', tickvals=list(range(len(matrix_df))), ticktext=matrix_df["Sector"].tolist())
     )
@@ -278,7 +274,7 @@ with tab3:
         "Sector": [s.sector for s in sectors],
         "Momentum": [s.momentum_score for s in sectors],
         "RSI": [s.avg_rsi for s in sectors],
-        "5D Return": [s.avg_return_5d for s in sectors]
+        "1M Return": [s.avg_return_1m for s in sectors]
     }
 
     fig = px.scatter(
@@ -286,8 +282,8 @@ with tab3:
         x="RSI",
         y="Momentum",
         text="Sector",
-        size=[abs(r) + 1 for r in scatter_data["5D Return"]],
-        color="5D Return",
+        size=[abs(r) + 1 for r in scatter_data["1M Return"]],
+        color="1M Return",
         color_continuous_scale="RdYlGn"
     )
 
@@ -321,22 +317,25 @@ with tab4:
     # Best sectors to be long
     st.markdown("### ✅ Best Sectors for Longs (This Month)")
 
-    best_sectors = sorted(sectors, key=lambda x: (x.momentum_score, x.avg_return_5d), reverse=True)[:3]
+    best_sectors = sorted(sectors, key=lambda x: (x.momentum_score, x.avg_return_1m), reverse=True)[:3]
 
     for s in best_sectors:
         with st.expander(f"🔥 {s.sector}", expanded=True):
-            cols = st.columns(4)
-            cols[0].metric("Momentum Score", f"{s.momentum_score:.0f}/100")
-            cols[1].metric("5D Return", f"{s.avg_return_5d:+.1f}%")
-            cols[2].metric("Trend", s.momentum_trend)
-            cols[3].metric("Avg RSI", f"{s.avg_rsi:.0f}")
+            cols = st.columns(5)
+            cols[0].metric("Momentum", f"{s.momentum_score:.0f}/100")
+            cols[1].metric("1M Return", f"{s.avg_return_1m:+.1f}%")
+            cols[2].metric("3M Return", f"{s.avg_return_3m:+.1f}%")
+            cols[3].metric("Trend", s.momentum_trend)
+            cols[4].metric("Avg RSI", f"{s.avg_rsi:.0f}")
 
             st.markdown("**Why this sector?**")
             reasons = []
             if s.momentum_score >= 60:
                 reasons.append("Strong momentum score")
-            if s.avg_return_5d > 0:
-                reasons.append("Positive short-term returns")
+            if s.avg_return_1m > 0:
+                reasons.append("Positive 1-month returns")
+            if s.avg_return_3m > 0:
+                reasons.append("Positive 3-month trend")
             if s.momentum_trend == "gaining":
                 reasons.append("Momentum is accelerating")
             if 40 <= s.avg_rsi <= 60:
@@ -348,26 +347,27 @@ with tab4:
             st.markdown("**Top Stocks to Consider:**")
             if s.top_stocks:
                 for ticker, ret in s.top_stocks[:5]:
-                    st.markdown(f"- **{ticker}**: {ret:+.1f}% (5D)")
+                    st.markdown(f"- **{ticker}**: {ret:+.1f}% (1M)")
 
     # Sectors to avoid
     st.markdown("---")
     st.markdown("### ⚠️ Sectors to Avoid")
 
-    worst_sectors = sorted(sectors, key=lambda x: (x.momentum_score, x.avg_return_5d))[:3]
+    worst_sectors = sorted(sectors, key=lambda x: (x.momentum_score, x.avg_return_1m))[:3]
 
     for s in worst_sectors:
         with st.expander(f"❄️ {s.sector}", expanded=False):
-            cols = st.columns(4)
-            cols[0].metric("Momentum Score", f"{s.momentum_score:.0f}/100")
-            cols[1].metric("5D Return", f"{s.avg_return_5d:+.1f}%")
-            cols[2].metric("Trend", s.momentum_trend)
-            cols[3].metric("Avg RSI", f"{s.avg_rsi:.0f}")
+            cols = st.columns(5)
+            cols[0].metric("Momentum", f"{s.momentum_score:.0f}/100")
+            cols[1].metric("1M Return", f"{s.avg_return_1m:+.1f}%")
+            cols[2].metric("3M Return", f"{s.avg_return_3m:+.1f}%")
+            cols[3].metric("Trend", s.momentum_trend)
+            cols[4].metric("Avg RSI", f"{s.avg_rsi:.0f}")
 
             st.markdown("**Weakest Stocks:**")
             if s.bottom_stocks:
                 for ticker, ret in s.bottom_stocks[:5]:
-                    st.markdown(f"- **{ticker}**: {ret:+.1f}% (5D)")
+                    st.markdown(f"- **{ticker}**: {ret:+.1f}% (1M)")
 
     # Oversold sectors for contrarian plays
     st.markdown("---")
