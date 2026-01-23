@@ -16,13 +16,13 @@ from datetime import datetime, timedelta
 
 # Page config
 st.set_page_config(
-    page_title="Sector Rotation - Stock Analyzer",
+    page_title="Monthly Rotation - Stock Analyzer",
     page_icon="🔄",
     layout="wide"
 )
 
-st.title("🔄 Sector Rotation Dashboard")
-st.markdown("*Follow the money - identify sector trends*")
+st.title("🔄 Monthly Sector Rotation")
+st.markdown("*Follow the money - monthly sector trends and rotation signals*")
 
 # Import after page config
 from sector_tracker import (
