@@ -16,6 +16,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Import API key from config (supports both Streamlit secrets and .env)
+from config import ANTHROPIC_API_KEY
+
 # Twilio configuration
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
@@ -334,7 +337,7 @@ def analyze_movement_with_ai(movement: StockMovement, context: dict) -> Movement
     try:
         import anthropic
 
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
         # Build the prompt - ask Claude to search for news
         direction = "UP" if movement.direction == "up" else "DOWN"
