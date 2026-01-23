@@ -159,14 +159,14 @@ with tab1:
         st.markdown("### 📈 Top Gainers (Multi-Week View)")
         gainers_data = []
         for stock in report.top_gainers[:7]:
+            high_ind = "⭐" if stock.near_52w_high else ""
             gainers_data.append({
                 "Stock": stock.ticker,
                 "Sector": stock.sector,
+                "52W High": f"₹{stock.week_52_high:.0f}" if stock.week_52_high else "N/A",
+                "% from 52W": f"{stock.pct_from_52w_high:+.1f}%{high_ind}" if stock.pct_from_52w_high else "N/A",
                 "1W": f"{stock.week_change_pct:+.1f}%",
-                "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
-                "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": stock.weekly_trend,
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%"
             })
@@ -177,14 +177,14 @@ with tab1:
         st.markdown("### 📉 Top Losers (Multi-Week View)")
         losers_data = []
         for stock in report.top_losers[:7]:
+            high_ind = "⭐" if stock.near_52w_high else ""
             losers_data.append({
                 "Stock": stock.ticker,
                 "Sector": stock.sector,
+                "52W High": f"₹{stock.week_52_high:.0f}" if stock.week_52_high else "N/A",
+                "% from 52W": f"{stock.pct_from_52w_high:+.1f}%{high_ind}" if stock.pct_from_52w_high else "N/A",
                 "1W": f"{stock.week_change_pct:+.1f}%",
-                "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
-                "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": stock.weekly_trend,
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%"
             })
@@ -204,12 +204,14 @@ with tab2:
     for stock in all_stock_metrics:
         if stock.ticker not in seen_tickers:
             seen_tickers.add(stock.ticker)
+            high_ind = "⭐" if stock.near_52w_high else ""
             all_stocks_data.append({
                 "Stock": stock.ticker,
                 "Sector": stock.sector,
                 "Price": f"₹{stock.current_price:.0f}",
+                "52W High": f"₹{stock.week_52_high:.0f}" if stock.week_52_high else "N/A",
+                "% from 52W": f"{stock.pct_from_52w_high:+.1f}%{high_ind}" if stock.pct_from_52w_high else "N/A",
                 "1W": f"{stock.week_change_pct:+.1f}%",
-                "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
                 "Trend": stock.weekly_trend,

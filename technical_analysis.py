@@ -25,6 +25,14 @@ class TechnicalSignals:
     ticker: str
     current_price: float
 
+    # 52-Week High/Low
+    week_52_high: Optional[float] = None
+    week_52_low: Optional[float] = None
+    pct_from_52w_high: Optional[float] = None  # Negative = below high
+    pct_from_52w_low: Optional[float] = None   # Positive = above low
+    near_52w_high: bool = False  # Within 5% of 52-week high
+    near_52w_low: bool = False   # Within 5% of 52-week low
+
     # RSI
     rsi: Optional[float] = None
     rsi_signal: Optional[str] = None  # "oversold", "overbought", "neutral"
@@ -250,6 +258,29 @@ def calculate_volume_analysis(df: pd.DataFrame, period: int = 20) -> tuple:
     volume_ratio = current_volume / avg_volume if avg_volume > 0 else None
 
     return avg_volume, volume_ratio
+
+
+def calculate_52_week_high_low(df: pd.DataFrame) -> tuple:
+    """
+    Calculate 52-week high and low.
+
+    Args:
+        df: DataFrame with 'High' and 'Low' columns (should have ~252 trading days)
+
+    Returns:
+        Tuple of (52_week_high, 52_week_low)
+    """
+    if df is None or df.empty:
+        return None, None
+
+    # Use last 252 trading days (approximately 52 weeks)
+    period = min(252, len(df))
+    recent_df = df.tail(period)
+
+    week_52_high = recent_df['High'].max() if 'High' in df.columns else recent_df['Close'].max()
+    week_52_low = recent_df['Low'].min() if 'Low' in df.columns else recent_df['Close'].min()
+
+    return week_52_high, week_52_low
 
 
 def get_rsi_signal(rsi: float) -> str:
@@ -481,10 +512,33 @@ def get_technical_analysis(df: pd.DataFrame, ticker: str) -> TechnicalSignals:
     volume_avg, volume_ratio = calculate_volume_analysis(df)
     current_volume = int(df['Volume'].iloc[-1]) if 'Volume' in df.columns else None
 
+    # Calculate 52-week high/low
+    week_52_high, week_52_low = calculate_52_week_high_low(df)
+    pct_from_52w_high = None
+    pct_from_52w_low = None
+    near_52w_high = False
+    near_52w_low = False
+
+    if week_52_high and current_price:
+        pct_from_52w_high = ((current_price - week_52_high) / week_52_high) * 100
+        near_52w_high = pct_from_52w_high >= -5  # Within 5% of high
+
+    if week_52_low and current_price:
+        pct_from_52w_low = ((current_price - week_52_low) / week_52_low) * 100
+        near_52w_low = pct_from_52w_low <= 5  # Within 5% of low
+
     # Build signals object
     signals = TechnicalSignals(
         ticker=ticker,
         current_price=round(current_price, 2),
+
+        # 52-Week High/Low
+        week_52_high=round(week_52_high, 2) if week_52_high else None,
+        week_52_low=round(week_52_low, 2) if week_52_low else None,
+        pct_from_52w_high=round(pct_from_52w_high, 1) if pct_from_52w_high is not None else None,
+        pct_from_52w_low=round(pct_from_52w_low, 1) if pct_from_52w_low is not None else None,
+        near_52w_high=near_52w_high,
+        near_52w_low=near_52w_low,
 
         # RSI
         rsi=round(rsi, 2) if rsi and not np.isnan(rsi) else None,
@@ -545,9 +599,18 @@ def get_technical_summary_text(signals: TechnicalSignals) -> str:
     if signals.current_price == 0:
         return f"{signals.ticker}: Technical data unavailable"
 
+    # 52-week high/low status
+    high_low_status = ""
+    if signals.near_52w_high:
+        high_low_status = " ⭐ NEAR 52W HIGH"
+    elif signals.near_52w_low:
+        high_low_status = " ⚠️ NEAR 52W LOW"
+
     lines = [
-        f"=== {signals.ticker} Technical Analysis ===",
-        f"Price: {signals.current_price}",
+        f"=== {signals.ticker} Technical Analysis ==={high_low_status}",
+        f"Price: ₹{signals.current_price}",
+        f"52W High: ₹{signals.week_52_high} ({signals.pct_from_52w_high:+.1f}%)" if signals.week_52_high else "",
+        f"52W Low: ₹{signals.week_52_low} ({signals.pct_from_52w_low:+.1f}%)" if signals.week_52_low else "",
         "",
         f"RSI (14): {signals.rsi} ({signals.rsi_signal})",
         f"MACD: {signals.macd_trend}",
@@ -571,6 +634,12 @@ def signals_to_dict(signals: TechnicalSignals) -> dict:
     return {
         "ticker": signals.ticker,
         "current_price": signals.current_price,
+        "week_52_high": signals.week_52_high,
+        "week_52_low": signals.week_52_low,
+        "pct_from_52w_high": signals.pct_from_52w_high,
+        "pct_from_52w_low": signals.pct_from_52w_low,
+        "near_52w_high": signals.near_52w_high,
+        "near_52w_low": signals.near_52w_low,
         "rsi": signals.rsi,
         "rsi_signal": signals.rsi_signal,
         "macd": signals.macd,

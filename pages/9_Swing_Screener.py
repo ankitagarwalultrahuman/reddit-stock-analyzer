@@ -339,18 +339,20 @@ if results:
     # Full results table
     full_data = []
     for r in results:
+        # 52W High indicator
+        high_indicator = "⭐" if r.near_52w_high else ""
         full_data.append({
             "Stock": r.ticker,
             "Sector": r.sector,
             "Price": f"₹{r.current_price:.2f}",
+            "52W High": f"₹{r.week_52_high:.0f}" if r.week_52_high else "N/A",
+            "% from 52W": f"{r.pct_from_52w_high:+.1f}%{high_indicator}" if r.pct_from_52w_high else "N/A",
             "Week %": f"{r.week_change:+.1f}%",
             "RSI": r.rsi,
             "MACD": r.macd_signal,
             "MA Trend": r.ma_trend,
             "Bias": r.technical_bias,
             "RS vs NIFTY": f"{r.relative_strength:+.1f}%",
-            "Support": f"₹{r.support:.2f}" if r.support else "N/A",
-            "Resistance": f"₹{r.resistance:.2f}" if r.resistance else "N/A",
             "Setups": len(r.setups),
             "Score": r.total_score
         })

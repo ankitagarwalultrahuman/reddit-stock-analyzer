@@ -43,6 +43,11 @@ class StockWeeklyMetrics:
     resistance_level: Optional[float] = None
     consolidating: bool = False
     breakout_candidate: bool = False
+    # 52-week high/low data
+    week_52_high: float = 0.0
+    week_52_low: float = 0.0
+    pct_from_52w_high: float = 0.0
+    near_52w_high: bool = False
 
 
 @dataclass
@@ -282,7 +287,12 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
             support_level=support,
             resistance_level=resistance,
             consolidating=consolidating,
-            breakout_candidate=breakout_candidate or (consolidating and near_resistance)
+            breakout_candidate=breakout_candidate or (consolidating and near_resistance),
+            # 52-week high/low from technical analysis
+            week_52_high=tech.week_52_high if tech and tech.week_52_high else 0.0,
+            week_52_low=tech.week_52_low if tech and tech.week_52_low else 0.0,
+            pct_from_52w_high=tech.pct_from_52w_high if tech and tech.pct_from_52w_high else 0.0,
+            near_52w_high=tech.near_52w_high if tech else False
         )
 
     except Exception as e:

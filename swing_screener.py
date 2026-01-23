@@ -68,6 +68,11 @@ class ScreenerResult:
     resistance: float
     setups: list[SwingSetup]
     total_score: int  # Aggregate score
+    # 52-week high/low data
+    week_52_high: float = 0.0
+    week_52_low: float = 0.0
+    pct_from_52w_high: float = 0.0
+    near_52w_high: bool = False
 
 
 def find_support_resistance_levels(df: pd.DataFrame, lookback: int = 20) -> tuple[list[float], list[float]]:
@@ -469,7 +474,12 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
             support=support,
             resistance=resistance,
             setups=setups,
-            total_score=total_score
+            total_score=total_score,
+            # 52-week high/low from technical analysis
+            week_52_high=tech.week_52_high or 0.0,
+            week_52_low=tech.week_52_low or 0.0,
+            pct_from_52w_high=tech.pct_from_52w_high or 0.0,
+            near_52w_high=tech.near_52w_high or False
         )
 
     except Exception as e:

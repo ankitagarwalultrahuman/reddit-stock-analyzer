@@ -321,6 +321,63 @@ def display_technical_indicators(technicals: dict):
         </div>
         """, unsafe_allow_html=True)
 
+    # Third row - 52-week high/low
+    col7, col8, col9 = st.columns(3)
+
+    with col7:
+        st.markdown("### 52-Week High")
+        week_52_high = technicals.get("week_52_high")
+        pct_from_high = technicals.get("pct_from_52w_high")
+        near_high = technicals.get("near_52w_high", False)
+
+        color_class = "metric-positive" if near_high else "metric-neutral"
+        high_indicator = "⭐ Near High!" if near_high else ""
+
+        st.markdown(f"""
+        <div class="indicator-box">
+            <h2 class="{color_class}">₹{week_52_high:.0f if week_52_high else 'N/A'}</h2>
+            <p>{pct_from_high:+.1f}% from high {high_indicator}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col8:
+        st.markdown("### 52-Week Low")
+        week_52_low = technicals.get("week_52_low")
+        pct_from_low = technicals.get("pct_from_52w_low")
+        near_low = technicals.get("near_52w_low", False)
+
+        color_class = "metric-negative" if near_low else "metric-neutral"
+        low_indicator = "⚠️ Near Low!" if near_low else ""
+
+        st.markdown(f"""
+        <div class="indicator-box">
+            <h2 class="{color_class}">₹{week_52_low:.0f if week_52_low else 'N/A'}</h2>
+            <p>{pct_from_low:+.1f}% from low {low_indicator}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col9:
+        st.markdown("### 52-Week Range")
+        if week_52_high and week_52_low:
+            current_price = technicals.get("current_price", 0)
+            range_pct = ((current_price - week_52_low) / (week_52_high - week_52_low)) * 100 if (week_52_high - week_52_low) > 0 else 0
+            range_position = "Upper" if range_pct > 75 else "Lower" if range_pct < 25 else "Middle"
+            color_class = "metric-positive" if range_pct > 60 else "metric-negative" if range_pct < 40 else "metric-neutral"
+
+            st.markdown(f"""
+            <div class="indicator-box">
+                <h2 class="{color_class}">{range_pct:.0f}%</h2>
+                <p>{range_position} of range</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="indicator-box">
+                <h2>N/A</h2>
+                <p>Insufficient data</p>
+            </div>
+            """, unsafe_allow_html=True)
+
 
 def display_confluence_signals(report_content: str):
     """Display confluence signals section."""
