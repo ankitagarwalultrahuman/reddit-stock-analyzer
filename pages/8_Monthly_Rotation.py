@@ -202,15 +202,34 @@ with tab2:
     st.markdown("---")
     st.markdown("### 📊 Rotation Analysis")
 
-    if rotation_signals:
-        for signal in rotation_signals:
-            signal_type = signal.get("type", "")
-            if signal_type == "accumulation":
-                st.success(f"✅ {signal.get('message', '')}")
-            elif signal_type == "distribution":
-                st.warning(f"⚠️ {signal.get('message', '')}")
-            else:
-                st.info(f"💡 {signal.get('message', '')}")
+    if rotation_signals and isinstance(rotation_signals, dict):
+        # Show recommendations
+        recommendations = rotation_signals.get("recommendations", [])
+        if recommendations:
+            for rec in recommendations:
+                if "ROTATE INTO" in rec:
+                    st.success(f"✅ {rec}")
+                elif "ROTATE OUT" in rec:
+                    st.warning(f"⚠️ {rec}")
+                else:
+                    st.info(f"💡 {rec}")
+
+        # Show gaining momentum sectors
+        gaining = rotation_signals.get("gaining_momentum", [])
+        if gaining:
+            st.markdown("**Gaining Momentum:**")
+            for sector, score, ret in gaining:
+                st.markdown(f"- {sector}: Momentum {score:.0f}, 5D Return {ret:+.1f}%")
+
+        # Show losing momentum sectors
+        losing = rotation_signals.get("losing_momentum", [])
+        if losing:
+            st.markdown("**Losing Momentum:**")
+            for sector, score, ret in losing:
+                st.markdown(f"- {sector}: Momentum {score:.0f}, 5D Return {ret:+.1f}%")
+
+        if not recommendations and not gaining and not losing:
+            st.info("No significant rotation signals detected")
     else:
         st.info("No significant rotation signals detected")
 

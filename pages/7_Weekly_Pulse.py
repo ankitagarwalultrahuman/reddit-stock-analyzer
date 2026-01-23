@@ -58,10 +58,19 @@ def get_weekly_report(stock_list: tuple):
 # Generate report
 if st.sidebar.button("🔄 Refresh Analysis", type="primary"):
     st.cache_data.clear()
+    st.rerun()
 
 with st.spinner(f"Analyzing {len(stocks)} stocks..."):
     report = get_weekly_report(tuple(stocks))
 
+# Debug info in sidebar
+st.sidebar.markdown("---")
+st.sidebar.caption(f"📊 Data Status:")
+st.sidebar.caption(f"• Stocks analyzed: {report.market_breadth['advances'] + report.market_breadth['declines'] + report.market_breadth['unchanged']}")
+st.sidebar.caption(f"• Gainers: {len(report.top_gainers)}")
+st.sidebar.caption(f"• Losers: {len(report.top_losers)}")
+st.sidebar.caption(f"• Breakouts: {len(report.breakout_candidates)}")
+st.sidebar.caption(f"• Oversold: {len(report.oversold_stocks)}")
 
 # Main content - NIFTY multi-week performance
 st.subheader("NIFTY 50 Performance (7-Week View)")
@@ -76,22 +85,19 @@ with col1:
     )
 
 with col2:
-    # Get 2-week change from report if available
-    two_week = getattr(report, 'nifty_two_week_change', report.nifty_week_change * 1.5)
     st.metric(
         "2 Weeks",
-        f"{two_week:+.1f}%",
+        f"{report.nifty_two_week_change:+.1f}%",
         delta=None,
-        delta_color="normal" if two_week >= 0 else "inverse"
+        delta_color="normal" if report.nifty_two_week_change >= 0 else "inverse"
     )
 
 with col3:
-    four_week = getattr(report, 'nifty_four_week_change', report.nifty_month_change * 0.7)
     st.metric(
         "4 Weeks",
-        f"{four_week:+.1f}%",
+        f"{report.nifty_four_week_change:+.1f}%",
         delta=None,
-        delta_color="normal" if four_week >= 0 else "inverse"
+        delta_color="normal" if report.nifty_four_week_change >= 0 else "inverse"
     )
 
 with col4:
@@ -141,29 +147,37 @@ with tab1:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("### 📈 Top Gainers")
+        st.markdown("### 📈 Top Gainers (Multi-Week View)")
         gainers_data = []
         for stock in report.top_gainers[:7]:
             gainers_data.append({
                 "Stock": stock.ticker,
                 "Sector": stock.sector,
-                "Week %": f"{stock.week_change_pct:+.1f}%",
-                "RSI": stock.rsi,
-                "RS": f"{stock.relative_strength:+.1f}"
+                "1W": f"{stock.week_change_pct:+.1f}%",
+                "2W": f"{stock.two_week_change_pct:+.1f}%",
+                "4W": f"{stock.four_week_change_pct:+.1f}%",
+                "6W": f"{stock.month_change_pct:+.1f}%",
+                "Trend": stock.weekly_trend,
+                "RSI": f"{stock.rsi:.0f}",
+                "RS": f"{stock.relative_strength:+.1f}%"
             })
         if gainers_data:
             st.dataframe(pd.DataFrame(gainers_data), hide_index=True, use_container_width=True)
 
     with col2:
-        st.markdown("### 📉 Top Losers")
+        st.markdown("### 📉 Top Losers (Multi-Week View)")
         losers_data = []
         for stock in report.top_losers[:7]:
             losers_data.append({
                 "Stock": stock.ticker,
                 "Sector": stock.sector,
-                "Week %": f"{stock.week_change_pct:+.1f}%",
-                "RSI": stock.rsi,
-                "RS": f"{stock.relative_strength:+.1f}"
+                "1W": f"{stock.week_change_pct:+.1f}%",
+                "2W": f"{stock.two_week_change_pct:+.1f}%",
+                "4W": f"{stock.four_week_change_pct:+.1f}%",
+                "6W": f"{stock.month_change_pct:+.1f}%",
+                "Trend": stock.weekly_trend,
+                "RSI": f"{stock.rsi:.0f}",
+                "RS": f"{stock.relative_strength:+.1f}%"
             })
         if losers_data:
             st.dataframe(pd.DataFrame(losers_data), hide_index=True, use_container_width=True)
@@ -281,12 +295,36 @@ with tab4:
     st.caption("Stocks consolidating near resistance with momentum")
 
     if report.breakout_candidates:
+        # Multi-week table view
+        breakout_data = []
         for stock in report.breakout_candidates[:10]:
-            with st.expander(f"{stock.ticker} - {stock.sector}", expanded=True):
+            breakout_data.append({
+                "Stock": stock.ticker,
+                "Sector": stock.sector,
+                "Price": f"₹{stock.current_price:.0f}",
+                "1W": f"{stock.week_change_pct:+.1f}%",
+                "2W": f"{stock.two_week_change_pct:+.1f}%",
+                "4W": f"{stock.four_week_change_pct:+.1f}%",
+                "6W": f"{stock.month_change_pct:+.1f}%",
+                "Trend": stock.weekly_trend,
+                "RSI": f"{stock.rsi:.0f}",
+                "RS": f"{stock.relative_strength:+.1f}%",
+                "Volume": f"{stock.volume_ratio:.1f}x",
+                "Support": f"₹{stock.support_level:.0f}" if stock.support_level else "N/A",
+                "Resistance": f"₹{stock.resistance_level:.0f}" if stock.resistance_level else "N/A"
+            })
+
+        st.dataframe(pd.DataFrame(breakout_data), hide_index=True, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### Detailed View")
+
+        for stock in report.breakout_candidates[:10]:
+            with st.expander(f"{stock.ticker} - {stock.sector}", expanded=False):
                 cols = st.columns(5)
                 cols[0].metric("Price", f"₹{stock.current_price:.2f}")
-                cols[1].metric("Week", f"{stock.week_change_pct:+.1f}%")
-                cols[2].metric("RSI", f"{stock.rsi:.0f}")
+                cols[1].metric("1W", f"{stock.week_change_pct:+.1f}%")
+                cols[2].metric("4W", f"{stock.four_week_change_pct:+.1f}%")
                 cols[3].metric("RS vs NIFTY", f"{stock.relative_strength:+.1f}%")
                 cols[4].metric("Volume", f"{stock.volume_ratio:.1f}x")
 
@@ -297,8 +335,8 @@ with tab4:
                     signals.append("📦 Consolidating")
                 if stock.near_resistance:
                     signals.append("🎯 Near Resistance")
-                if stock.macd_signal == "bullish_crossover":
-                    signals.append("✅ MACD Bullish Crossover")
+                if stock.macd_signal == "bullish_crossover" or stock.macd_signal == "bullish":
+                    signals.append("✅ MACD Bullish")
                 if stock.volume_ratio > 1.5:
                     signals.append("📊 Volume Spike")
 
@@ -318,10 +356,15 @@ with tab5:
             oversold_data.append({
                 "Stock": stock.ticker,
                 "Sector": stock.sector,
-                "Price": f"₹{stock.current_price:.2f}",
-                "Week %": f"{stock.week_change_pct:+.1f}%",
-                "RSI": stock.rsi,
-                "Support": f"₹{stock.support_level}" if stock.support_level else "N/A",
+                "Price": f"₹{stock.current_price:.0f}",
+                "1W": f"{stock.week_change_pct:+.1f}%",
+                "2W": f"{stock.two_week_change_pct:+.1f}%",
+                "4W": f"{stock.four_week_change_pct:+.1f}%",
+                "6W": f"{stock.month_change_pct:+.1f}%",
+                "Trend": stock.weekly_trend,
+                "RSI": f"{stock.rsi:.0f}",
+                "RS": f"{stock.relative_strength:+.1f}%",
+                "Support": f"₹{stock.support_level:.0f}" if stock.support_level else "N/A",
                 "MACD": stock.macd_signal,
                 "Near Support": "✅" if stock.near_support else "❌"
             })
@@ -352,9 +395,13 @@ with tab5:
             overbought_data.append({
                 "Stock": stock.ticker,
                 "Sector": stock.sector,
-                "Price": f"₹{stock.current_price:.2f}",
-                "Week %": f"{stock.week_change_pct:+.1f}%",
-                "RSI": stock.rsi,
+                "Price": f"₹{stock.current_price:.0f}",
+                "1W": f"{stock.week_change_pct:+.1f}%",
+                "2W": f"{stock.two_week_change_pct:+.1f}%",
+                "4W": f"{stock.four_week_change_pct:+.1f}%",
+                "6W": f"{stock.month_change_pct:+.1f}%",
+                "Trend": stock.weekly_trend,
+                "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%"
             })
 
@@ -383,17 +430,20 @@ with tab6:
         fig.update_layout(height=400)
         st.plotly_chart(fig, use_container_width=True)
 
-        # Table
+        # Table with multi-week view
         rs_table = []
         for stock in report.rs_leaders[:15]:
             rs_table.append({
                 "Stock": stock.ticker,
                 "Sector": stock.sector,
-                "Price": f"₹{stock.current_price:.2f}",
-                "Week %": f"{stock.week_change_pct:+.1f}%",
-                "Month %": f"{stock.month_change_pct:+.1f}%",
+                "Price": f"₹{stock.current_price:.0f}",
+                "1W": f"{stock.week_change_pct:+.1f}%",
+                "2W": f"{stock.two_week_change_pct:+.1f}%",
+                "4W": f"{stock.four_week_change_pct:+.1f}%",
+                "6W": f"{stock.month_change_pct:+.1f}%",
+                "Trend": stock.weekly_trend,
                 "RS vs NIFTY": f"{stock.relative_strength:+.1f}%",
-                "RSI": stock.rsi,
+                "RSI": f"{stock.rsi:.0f}",
                 "Bias": stock.technical_bias
             })
 

@@ -52,9 +52,11 @@ class WeeklyPulseReport:
     week_start: datetime
     week_end: datetime
 
-    # Market overview
-    nifty_week_change: float
-    nifty_month_change: float
+    # Market overview - multi-week NIFTY performance
+    nifty_week_change: float       # 1 week (5 days)
+    nifty_two_week_change: float   # 2 weeks (10 days)
+    nifty_four_week_change: float  # 4 weeks (20 days)
+    nifty_month_change: float      # 6 weeks (30 days)
     market_breadth: dict  # advances, declines, unchanged
 
     # Sector analysis
@@ -180,7 +182,11 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
     try:
         # Get 7 weeks of historical data (50 trading days)
         df = fetch_stock_history(ticker, days=50, force_refresh=True)
-        if df.empty or len(df) < 10:
+        if df is None or df.empty:
+            print(f"[{ticker}] No data returned from fetch_stock_history")
+            return None
+        if len(df) < 10:
+            print(f"[{ticker}] Insufficient data: only {len(df)} rows")
             return None
 
         # Get current price
@@ -226,10 +232,10 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
         else:
             volume_ratio = 1.0
 
-        # Technical analysis
-        tech = get_technical_analysis(ticker)
+        # Technical analysis - pass the DataFrame we already have
+        tech = get_technical_analysis(df, ticker)
         rsi = tech.rsi if tech else 50
-        macd_signal = tech.macd_crossover if tech else "neutral"
+        macd_signal = tech.macd_trend if tech else "neutral"
         technical_bias = tech.technical_bias if tech else "neutral"
 
         # Support/Resistance using 6 weeks of data
@@ -402,6 +408,7 @@ def generate_weekly_pulse(
 
     # Get NIFTY performance
     nifty_perf = get_nifty_performance()
+    print(f"NIFTY Performance: 1W={nifty_perf.get('week_change', 0):.2f}%, 2W={nifty_perf.get('two_week_change', 0):.2f}%, 4W={nifty_perf.get('four_week_change', 0):.2f}%, 6W={nifty_perf.get('month_change', 0):.2f}%")
 
     # Analyze all stocks in parallel
     stock_metrics = []
@@ -457,6 +464,8 @@ def generate_weekly_pulse(
         week_start=datetime.now() - timedelta(days=7),
         week_end=datetime.now(),
         nifty_week_change=nifty_perf.get("week_change", 0),
+        nifty_two_week_change=nifty_perf.get("two_week_change", 0),
+        nifty_four_week_change=nifty_perf.get("four_week_change", 0),
         nifty_month_change=nifty_perf.get("month_change", 0),
         market_breadth={"advances": advances, "declines": declines, "unchanged": unchanged},
         top_sectors=top_sectors,

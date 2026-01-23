@@ -388,13 +388,13 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
             avg_vol = float(df['Volume'].tail(20).mean())
             volume_ratio = current_vol / avg_vol if avg_vol > 0 else 1.0
 
-        # Technical analysis
-        tech = get_technical_analysis(ticker)
+        # Technical analysis - pass the DataFrame we already have
+        tech = get_technical_analysis(df, ticker)
         if not tech:
             return None
 
         rsi = tech.rsi or 50
-        macd_signal = tech.macd_crossover or "neutral"
+        macd_signal = tech.macd_trend or "neutral"
         ma_trend = tech.ma_trend or "mixed"
         volume_signal = tech.volume_signal or "normal"
         technical_bias = tech.technical_bias or "neutral"
