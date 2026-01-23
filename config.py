@@ -34,6 +34,9 @@ SUBREDDITS = [
     "IndianStockMarket",
     "DalalStreetTalks",
     "IndiaInvestments",
+    "Indiantradingbets",
+    "StockMarketIndia",
+    "IndiaStocks"
 ]
 
 # Scraping limits
