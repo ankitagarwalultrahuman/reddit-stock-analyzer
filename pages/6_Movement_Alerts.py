@@ -193,10 +193,10 @@ with tab2:
 
     if analyze_single and single_ticker:
         with st.spinner(f"Analyzing {single_ticker}..."):
-            # Get price data
+            # Get price data (force_refresh=True for real-time prices)
             from stock_history import fetch_stock_history, calculate_performance_metrics
 
-            df = fetch_stock_history(single_ticker, days=10)
+            df = fetch_stock_history(single_ticker, days=10, force_refresh=True)
 
             if df.empty:
                 st.error(f"Could not fetch data for {single_ticker}")

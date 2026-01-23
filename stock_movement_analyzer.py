@@ -134,7 +134,8 @@ def detect_significant_movements(
     for ticker in tickers:
         try:
             normalized = normalize_ticker(ticker)
-            df = fetch_stock_history(normalized, days=5)
+            # Use force_refresh=True to get real-time prices, not cached data
+            df = fetch_stock_history(normalized, days=5, force_refresh=True)
 
             if df.empty or len(df) < 2:
                 continue

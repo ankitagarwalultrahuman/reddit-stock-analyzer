@@ -230,13 +230,14 @@ def get_cache_stats() -> dict:
     }
 
 
-def fetch_stock_history(ticker: str, days: int = 30) -> pd.DataFrame:
+def fetch_stock_history(ticker: str, days: int = 30, force_refresh: bool = False) -> pd.DataFrame:
     """
     Fetch historical price data for a stock.
 
     Args:
         ticker: NSE stock symbol (e.g., "RELIANCE", "TCS")
         days: Number of days of history (default 30)
+        force_refresh: If True, bypass cache and fetch fresh data from yfinance
 
     Returns:
         DataFrame with columns: Open, High, Low, Close, Volume
@@ -249,10 +250,11 @@ def fetch_stock_history(ticker: str, days: int = 30) -> pd.DataFrame:
     # Normalize ticker
     normalized_ticker = normalize_ticker(ticker)
 
-    # Check cache first
-    cached = get_cached_data(normalized_ticker)
-    if cached is not None and not cached.empty:
-        return cached
+    # Check cache first (unless force_refresh is True)
+    if not force_refresh:
+        cached = get_cached_data(normalized_ticker)
+        if cached is not None and not cached.empty:
+            return cached
 
     # Convert to yfinance format
     yf_symbol = get_nse_symbol(ticker)
