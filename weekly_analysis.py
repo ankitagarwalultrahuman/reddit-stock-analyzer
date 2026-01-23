@@ -23,19 +23,22 @@ from watchlist_manager import NIFTY50_STOCKS, SECTOR_STOCKS, get_sector_for_stoc
 
 @dataclass
 class StockWeeklyMetrics:
-    """Weekly metrics for a single stock."""
+    """Weekly metrics for a single stock over 7 weeks."""
     ticker: str
     sector: str
     current_price: float
-    week_change_pct: float
-    month_change_pct: float
-    volume_ratio: float  # vs 20-day average
+    week_change_pct: float      # 1 week (5 days)
+    two_week_change_pct: float  # 2 weeks (10 days)
+    four_week_change_pct: float # 4 weeks (20 days)
+    month_change_pct: float     # 6 weeks (30 days) - broader view
+    volume_ratio: float         # vs 20-day average
     rsi: float
     macd_signal: str
     technical_bias: str
-    relative_strength: float  # vs NIFTY
+    relative_strength: float    # vs NIFTY over 4 weeks
     near_support: bool
     near_resistance: bool
+    weekly_trend: str           # "up", "down", "sideways" based on multi-week
     support_level: Optional[float] = None
     resistance_level: Optional[float] = None
     consolidating: bool = False
@@ -173,11 +176,11 @@ def detect_breakout_candidate(df: pd.DataFrame, current_price: float, resistance
 
 
 def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
-    """Analyze a single stock for weekly metrics."""
+    """Analyze a single stock for weekly metrics using 7 weeks of data."""
     try:
-        # Get historical data
-        df = fetch_stock_history(ticker, days=30, force_refresh=True)
-        if df.empty or len(df) < 5:
+        # Get 7 weeks of historical data (50 trading days)
+        df = fetch_stock_history(ticker, days=50, force_refresh=True)
+        if df.empty or len(df) < 10:
             return None
 
         # Get current price
@@ -187,25 +190,39 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
         else:
             current_price = price_data["current_price"]
 
-        # Calculate weekly change (5 trading days)
+        # Calculate weekly change (1 week = 5 trading days)
         if len(df) >= 5:
             week_ago_price = float(df['Close'].iloc[-5])
             week_change = ((current_price - week_ago_price) / week_ago_price) * 100
         else:
             week_change = 0.0
 
-        # Calculate monthly change (20 trading days)
+        # Calculate 2-week change (10 trading days)
+        two_week_change = 0.0
+        if len(df) >= 10:
+            two_week_ago_price = float(df['Close'].iloc[-10])
+            two_week_change = ((current_price - two_week_ago_price) / two_week_ago_price) * 100
+
+        # Calculate 4-week change (20 trading days)
+        four_week_change = 0.0
         if len(df) >= 20:
-            month_ago_price = float(df['Close'].iloc[-20])
-            month_change = ((current_price - month_ago_price) / month_ago_price) * 100
+            four_week_ago_price = float(df['Close'].iloc[-20])
+            four_week_change = ((current_price - four_week_ago_price) / four_week_ago_price) * 100
+
+        # Calculate 6-week change (30 trading days) - use this as month_change for broader view
+        if len(df) >= 30:
+            six_week_ago_price = float(df['Close'].iloc[-30])
+            month_change = ((current_price - six_week_ago_price) / six_week_ago_price) * 100
+        elif len(df) >= 20:
+            month_change = four_week_change
         else:
             month_change = 0.0
 
-        # Volume ratio
+        # Volume ratio (compare recent week vs 4-week average)
         if 'Volume' in df.columns:
-            current_vol = float(df['Volume'].iloc[-1])
+            current_week_vol = float(df['Volume'].tail(5).mean())
             avg_vol = float(df['Volume'].tail(20).mean())
-            volume_ratio = current_vol / avg_vol if avg_vol > 0 else 1.0
+            volume_ratio = current_week_vol / avg_vol if avg_vol > 0 else 1.0
         else:
             volume_ratio = 1.0
 
@@ -215,19 +232,27 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
         macd_signal = tech.macd_crossover if tech else "neutral"
         technical_bias = tech.technical_bias if tech else "neutral"
 
-        # Support/Resistance
-        support, resistance = find_support_resistance(df)
+        # Support/Resistance using 6 weeks of data
+        support, resistance = find_support_resistance(df, lookback=30)
 
-        # Near support/resistance (within 2%)
-        near_support = support > 0 and ((current_price - support) / current_price) < 0.02
-        near_resistance = resistance > 0 and ((resistance - current_price) / current_price) < 0.02
+        # Near support/resistance (within 3%)
+        near_support = support > 0 and ((current_price - support) / current_price) < 0.03
+        near_resistance = resistance > 0 and ((resistance - current_price) / current_price) < 0.03
 
-        # Consolidation and breakout detection
-        consolidating = detect_consolidation(df)
+        # Consolidation detection (over 2 weeks)
+        consolidating = detect_consolidation(df, days=10, threshold_pct=8.0)
         breakout_candidate = detect_breakout_candidate(df, current_price, resistance)
 
-        # Relative strength vs NIFTY
+        # Relative strength vs NIFTY over 4 weeks
         rs = calculate_relative_strength(ticker, days=20)
+
+        # Determine weekly trend based on multi-week performance
+        if four_week_change > 5 and week_change > 0:
+            weekly_trend = "up"
+        elif four_week_change < -5 and week_change < 0:
+            weekly_trend = "down"
+        else:
+            weekly_trend = "sideways"
 
         # Get sector
         sector = get_sector_for_stock(ticker) or "Unknown"
@@ -237,6 +262,8 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
             sector=sector,
             current_price=round(current_price, 2),
             week_change_pct=round(week_change, 2),
+            two_week_change_pct=round(two_week_change, 2),
+            four_week_change_pct=round(four_week_change, 2),
             month_change_pct=round(month_change, 2),
             volume_ratio=round(volume_ratio, 2),
             rsi=round(rsi, 1) if rsi else 50,
@@ -245,6 +272,7 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
             relative_strength=rs,
             near_support=near_support,
             near_resistance=near_resistance,
+            weekly_trend=weekly_trend,
             support_level=support,
             resistance_level=resistance,
             consolidating=consolidating,
@@ -257,38 +285,54 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
 
 
 def get_nifty_performance() -> dict:
-    """Get NIFTY 50 index performance."""
+    """Get NIFTY 50 index performance over 7 weeks."""
     try:
         import yfinance as yf
 
         nifty = yf.Ticker("^NSEI")
-        df = nifty.history(period="1mo")
+        df = nifty.history(period="3mo")  # Get 3 months for 7+ weeks of data
 
         if df.empty:
-            return {"week_change": 0, "month_change": 0}
+            return {"week_change": 0, "two_week_change": 0, "four_week_change": 0, "six_week_change": 0}
 
         current = float(df['Close'].iloc[-1])
 
-        # Week change
+        # 1 Week change (5 trading days)
+        week_change = 0
         if len(df) >= 5:
             week_ago = float(df['Close'].iloc[-5])
             week_change = ((current - week_ago) / week_ago) * 100
-        else:
-            week_change = 0
 
-        # Month change
-        month_ago = float(df['Close'].iloc[0])
-        month_change = ((current - month_ago) / month_ago) * 100
+        # 2 Week change (10 trading days)
+        two_week_change = 0
+        if len(df) >= 10:
+            two_week_ago = float(df['Close'].iloc[-10])
+            two_week_change = ((current - two_week_ago) / two_week_ago) * 100
+
+        # 4 Week change (20 trading days)
+        four_week_change = 0
+        if len(df) >= 20:
+            four_week_ago = float(df['Close'].iloc[-20])
+            four_week_change = ((current - four_week_ago) / four_week_ago) * 100
+
+        # 6 Week change (30 trading days)
+        six_week_change = 0
+        if len(df) >= 30:
+            six_week_ago = float(df['Close'].iloc[-30])
+            six_week_change = ((current - six_week_ago) / six_week_ago) * 100
 
         return {
             "current": round(current, 2),
             "week_change": round(week_change, 2),
-            "month_change": round(month_change, 2)
+            "two_week_change": round(two_week_change, 2),
+            "four_week_change": round(four_week_change, 2),
+            "six_week_change": round(six_week_change, 2),
+            "month_change": round(six_week_change, 2)  # Alias for compatibility
         }
 
     except Exception as e:
         print(f"Error fetching NIFTY: {e}")
-        return {"week_change": 0, "month_change": 0}
+        return {"week_change": 0, "two_week_change": 0, "four_week_change": 0, "six_week_change": 0, "month_change": 0}
 
 
 def get_fii_dii_data() -> dict:

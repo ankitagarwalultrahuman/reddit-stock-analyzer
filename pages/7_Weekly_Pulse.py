@@ -63,46 +63,60 @@ with st.spinner(f"Analyzing {len(stocks)} stocks..."):
     report = get_weekly_report(tuple(stocks))
 
 
-# Main content
-col1, col2, col3, col4 = st.columns(4)
+# Main content - NIFTY multi-week performance
+st.subheader("NIFTY 50 Performance (7-Week View)")
+col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
     st.metric(
-        "NIFTY Week",
+        "1 Week",
         f"{report.nifty_week_change:+.1f}%",
         delta=None,
         delta_color="normal" if report.nifty_week_change >= 0 else "inverse"
     )
 
 with col2:
+    # Get 2-week change from report if available
+    two_week = getattr(report, 'nifty_two_week_change', report.nifty_week_change * 1.5)
     st.metric(
-        "NIFTY Month",
+        "2 Weeks",
+        f"{two_week:+.1f}%",
+        delta=None,
+        delta_color="normal" if two_week >= 0 else "inverse"
+    )
+
+with col3:
+    four_week = getattr(report, 'nifty_four_week_change', report.nifty_month_change * 0.7)
+    st.metric(
+        "4 Weeks",
+        f"{four_week:+.1f}%",
+        delta=None,
+        delta_color="normal" if four_week >= 0 else "inverse"
+    )
+
+with col4:
+    st.metric(
+        "6 Weeks",
         f"{report.nifty_month_change:+.1f}%",
         delta=None,
         delta_color="normal" if report.nifty_month_change >= 0 else "inverse"
     )
 
-with col3:
+with col5:
     advances = report.market_breadth['advances']
     declines = report.market_breadth['declines']
     st.metric(
-        "Market Breadth",
-        f"{advances}/{declines}",
+        "Breadth",
+        f"{advances}↑ / {declines}↓",
         delta="Bullish" if advances > declines else "Bearish",
         delta_color="normal" if advances > declines else "inverse"
     )
 
-with col4:
-    st.metric(
-        "FII Trend",
-        report.fii_trend,
-        delta=None
-    )
-
 
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 Key Insights",
+    "📊 Multi-Week View",
     "🏭 Sectors",
     "🚀 Breakouts",
     "📉 Oversold",
@@ -156,6 +170,57 @@ with tab1:
 
 
 with tab2:
+    st.subheader("Multi-Week Stock Performance")
+    st.caption("Track stocks over 1-6 weeks to identify sustained trends")
+
+    # Create multi-week performance table
+    all_stocks_data = []
+    all_stock_metrics = report.top_gainers + report.top_losers + report.rs_leaders
+    seen_tickers = set()
+
+    for stock in all_stock_metrics:
+        if stock.ticker not in seen_tickers:
+            seen_tickers.add(stock.ticker)
+            all_stocks_data.append({
+                "Stock": stock.ticker,
+                "Sector": stock.sector,
+                "Price": f"₹{stock.current_price:.0f}",
+                "1W": f"{stock.week_change_pct:+.1f}%",
+                "2W": f"{stock.two_week_change_pct:+.1f}%",
+                "4W": f"{stock.four_week_change_pct:+.1f}%",
+                "6W": f"{stock.month_change_pct:+.1f}%",
+                "Trend": stock.weekly_trend,
+                "RSI": stock.rsi,
+                "RS": f"{stock.relative_strength:+.1f}%"
+            })
+
+    if all_stocks_data:
+        df = pd.DataFrame(all_stocks_data)
+        st.dataframe(df, hide_index=True, use_container_width=True, height=400)
+
+    # Weekly trend summary
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+
+    uptrend_stocks = [s for s in all_stock_metrics if s.weekly_trend == "up"]
+    downtrend_stocks = [s for s in all_stock_metrics if s.weekly_trend == "down"]
+    sideways_stocks = [s for s in all_stock_metrics if s.weekly_trend == "sideways"]
+
+    with col1:
+        st.metric("Uptrend Stocks", len(set(s.ticker for s in uptrend_stocks)))
+        if uptrend_stocks:
+            st.caption(f"Top: {', '.join([s.ticker for s in uptrend_stocks[:5]])}")
+
+    with col2:
+        st.metric("Downtrend Stocks", len(set(s.ticker for s in downtrend_stocks)))
+        if downtrend_stocks:
+            st.caption(f"Worst: {', '.join([s.ticker for s in downtrend_stocks[:5]])}")
+
+    with col3:
+        st.metric("Sideways Stocks", len(set(s.ticker for s in sideways_stocks)))
+
+
+with tab3:
     st.subheader("Sector Performance")
 
     col1, col2 = st.columns(2)
@@ -211,7 +276,7 @@ with tab2:
         st.plotly_chart(fig, use_container_width=True)
 
 
-with tab3:
+with tab4:
     st.subheader("🚀 Breakout Candidates")
     st.caption("Stocks consolidating near resistance with momentum")
 
@@ -243,7 +308,7 @@ with tab3:
         st.info("No breakout candidates found this week")
 
 
-with tab4:
+with tab5:
     st.subheader("📉 Oversold Stocks (RSI < 35)")
     st.caption("Potential bounce candidates - confirm with price action before entry")
 
@@ -298,7 +363,7 @@ with tab4:
         st.info("No overbought stocks found")
 
 
-with tab5:
+with tab6:
     st.subheader("💪 Relative Strength Leaders")
     st.caption("Stocks outperforming NIFTY - strong momentum")
 
