@@ -20,3 +20,6 @@ growwapi>=1.0.0
 
 # SMS Alerts via Twilio
 twilio>=8.0.0
+
+# Perplexity AI (uses OpenAI-compatible API)
+openai>=1.0.0

@@ -3,7 +3,7 @@ Stock Movement Analyzer - Analyzes why stocks moved and sends SMS alerts.
 
 Features:
 - Monitors portfolio stocks for significant price changes (>2%)
-- Uses Claude AI to analyze WHY the stock moved
+- Uses Perplexity AI to analyze WHY the stock moved (real-time web search)
 - Combines news, Reddit sentiment, and technicals for analysis
 - Sends concise SMS summaries via Twilio
 """
@@ -16,8 +16,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Import API key from config (supports both Streamlit secrets and .env)
-from config import ANTHROPIC_API_KEY
+# Import API keys from config (supports both Streamlit secrets and .env)
+from config import PERPLEXITY_API_KEY
 
 # Twilio configuration
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
@@ -331,7 +331,9 @@ def search_stock_news(ticker: str, company_name: str = None) -> list[dict]:
 
 def analyze_movement_with_ai(movement: StockMovement, context: dict) -> MovementAnalysis:
     """
-    Use Claude AI to analyze why a stock moved by searching news and other sources.
+    Use Perplexity AI to analyze why a stock moved by searching real-time news.
+
+    Perplexity has built-in web search capability for up-to-date information.
 
     Args:
         movement: The stock movement to analyze
@@ -341,11 +343,15 @@ def analyze_movement_with_ai(movement: StockMovement, context: dict) -> Movement
         MovementAnalysis with explanation
     """
     try:
-        import anthropic
+        from openai import OpenAI
 
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        # Perplexity uses OpenAI-compatible API
+        client = OpenAI(
+            api_key=PERPLEXITY_API_KEY,
+            base_url="https://api.perplexity.ai"
+        )
 
-        # Build the prompt - ask Claude to search for news
+        # Build the prompt
         direction = "UP" if movement.direction == "up" else "DOWN"
         direction_word = "rose" if movement.direction == "up" else "fell"
 
@@ -371,46 +377,85 @@ def analyze_movement_with_ai(movement: StockMovement, context: dict) -> Movement
             "M&M": "Mahindra and Mahindra",
             "MARUTI": "Maruti Suzuki",
             "LT": "Larsen and Toubro",
+            "HCLTECH": "HCL Technologies",
+            "TECHM": "Tech Mahindra",
+            "ULTRACEMCO": "UltraTech Cement",
+            "NESTLEIND": "Nestle India",
+            "ASIANPAINT": "Asian Paints",
+            "JSWSTEEL": "JSW Steel",
+            "TATASTEEL": "Tata Steel",
+            "POWERGRID": "Power Grid Corporation",
+            "NTPC": "NTPC Limited",
+            "ONGC": "Oil and Natural Gas Corporation",
+            "COALINDIA": "Coal India",
+            "BPCL": "Bharat Petroleum",
+            "IOC": "Indian Oil Corporation",
+            "GAIL": "GAIL India",
+            "HINDALCO": "Hindalco Industries",
+            "VEDL": "Vedanta Limited",
+            "DRREDDY": "Dr Reddy's Laboratories",
+            "CIPLA": "Cipla",
+            "DIVISLAB": "Divi's Laboratories",
+            "APOLLOHOSP": "Apollo Hospitals",
+            "BRITANNIA": "Britannia Industries",
+            "DABUR": "Dabur India",
+            "MARICO": "Marico",
+            "PIDILITIND": "Pidilite Industries",
+            "BERGEPAINT": "Berger Paints",
+            "HAVELLS": "Havells India",
+            "SIEMENS": "Siemens India",
+            "ABB": "ABB India",
+            "INDUSINDBK": "IndusInd Bank",
+            "BANDHANBNK": "Bandhan Bank",
+            "FEDERALBNK": "Federal Bank",
+            "IDFCFIRSTB": "IDFC First Bank",
+            "PNB": "Punjab National Bank",
+            "BANKBARODA": "Bank of Baroda",
+            "CANBK": "Canara Bank",
+            "SBILIFE": "SBI Life Insurance",
+            "HDFCLIFE": "HDFC Life Insurance",
+            "ICICIGI": "ICICI Lombard",
+            "BAJAJFINSV": "Bajaj Finserv",
+            "CHOLAFIN": "Cholamandalam Finance",
+            "MUTHOOTFIN": "Muthoot Finance",
+            "IRFC": "Indian Railway Finance Corporation",
+            "IRCTC": "IRCTC",
+            "HAL": "Hindustan Aeronautics",
+            "BEL": "Bharat Electronics",
+            "BHEL": "Bharat Heavy Electricals",
         }
 
         company_name = company_names.get(movement.ticker, movement.ticker)
 
-        prompt = f"""I need you to find out why {company_name} ({movement.ticker}) stock {direction_word} {abs(movement.change_percent):.1f}% today.
+        prompt = f"""Search for today's news about {company_name} ({movement.ticker}) NSE stock to explain why it {direction_word} {abs(movement.change_percent):.1f}% today.
 
-STOCK MOVEMENT DATA:
-- Stock: {movement.ticker} ({company_name})
+STOCK DATA:
+- Stock: {movement.ticker} ({company_name}) on NSE India
 - Previous Close: ₹{movement.previous_price:.2f}
 - Current Price: ₹{movement.current_price:.2f}
 - Change: {movement.change_percent:+.2f}%
-- Direction: {direction}
-- Volume: {movement.volume_ratio:.1f}x average volume
+- Volume: {movement.volume_ratio:.1f}x average
 
-Please search for recent news about {company_name} or {movement.ticker} to find the likely reason for this price movement. Look for:
-1. Company-specific news (earnings, announcements, deals, management changes)
-2. Sector news that might affect this stock
-3. Market-wide factors
-4. Any regulatory or government policy changes
+Search for recent news and provide:
+1. SMS: A short summary (UNDER 140 characters) - the main reason for the move
+2. DETAIL: 2-3 sentences with specific news/events you found
+3. CONFIDENCE: high/medium/low
 
-After researching, provide:
-1. SMS: A short summary (UNDER 140 characters) of the main reason - this will be sent as SMS alert
-2. DETAIL: A 2-3 sentence detailed explanation with specific news/events found
-3. CONFIDENCE: high/medium/low based on how certain you are about the reason
-
-Format your response EXACTLY as:
-SMS: [short reason under 140 chars]
-DETAIL: [detailed explanation with specific news]
+Format EXACTLY as:
+SMS: [reason under 140 chars]
+DETAIL: [explanation with news sources]
 CONFIDENCE: [high/medium/low]
 """
 
-        # Use Claude with web search capability
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}]
+        # Use Perplexity's online model with web search
+        response = client.chat.completions.create(
+            model="sonar",  # Perplexity's model with web search
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000
         )
 
         # Parse response
-        response_text = response.content[0].text
+        response_text = response.choices[0].message.content
 
         sms_summary = ""
         detailed = ""
@@ -441,7 +486,7 @@ CONFIDENCE: [high/medium/low]
         if not detailed:
             detailed = response_text[:500]
 
-        sources = ["news_search"]
+        sources = ["perplexity_search"]
         if context.get("technicals"):
             sources.append("technicals")
         if context.get("reddit_sentiment"):
