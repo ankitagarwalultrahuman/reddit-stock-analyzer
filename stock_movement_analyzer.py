@@ -342,6 +342,11 @@ def analyze_movement_with_ai(movement: StockMovement, context: dict) -> Movement
     Returns:
         MovementAnalysis with explanation
     """
+    # Check if API key is configured
+    if not PERPLEXITY_API_KEY:
+        print("Perplexity API key not configured")
+        raise ValueError("PERPLEXITY_API_KEY not set")
+
     try:
         from openai import OpenAI
 
@@ -427,35 +432,73 @@ def analyze_movement_with_ai(movement: StockMovement, context: dict) -> Movement
 
         company_name = company_names.get(movement.ticker, movement.ticker)
 
-        prompt = f"""Search for today's news about {company_name} ({movement.ticker}) NSE stock to explain why it {direction_word} {abs(movement.change_percent):.1f}% today.
+        # Get sector info from context
+        sector_info = ""
+        if context.get("sector"):
+            sector_info = f"- Sector: {context['sector']}"
+            if context.get("sector_performance"):
+                sp = context["sector_performance"]
+                sector_info += f" (Sector momentum: {sp.get('momentum', 'N/A')}, Trend: {sp.get('trend', 'N/A')})"
 
-STOCK DATA:
-- Stock: {movement.ticker} ({company_name}) on NSE India
+        # Get technical context
+        tech_info = ""
+        if context.get("technicals"):
+            tech = context["technicals"]
+            tech_info = f"""
+TECHNICAL INDICATORS:
+- RSI: {tech.get('rsi', 'N/A')}
+- MACD: {tech.get('macd_crossover', 'N/A')}
+- Technical Bias: {tech.get('technical_bias', 'N/A')}
+- Price vs 50 EMA: {tech.get('price_vs_ema50', 'N/A')}"""
+
+        prompt = f"""You are a stock market analyst. Search the web to find why {company_name} ({movement.ticker}) stock on NSE India {direction_word} {abs(movement.change_percent):.1f}% today.
+
+STOCK MOVEMENT DATA:
+- Stock: {movement.ticker} ({company_name})
+- Exchange: NSE India
 - Previous Close: ₹{movement.previous_price:.2f}
 - Current Price: ₹{movement.current_price:.2f}
 - Change: {movement.change_percent:+.2f}%
-- Volume: {movement.volume_ratio:.1f}x average
+- Direction: {direction}
+- Volume: {movement.volume_ratio:.1f}x average volume
+{sector_info}
+{tech_info}
 
-Search for recent news and provide:
-1. SMS: A short summary (UNDER 140 characters) - the main reason for the move
-2. DETAIL: 2-3 sentences with specific news/events you found
-3. CONFIDENCE: high/medium/low
+SEARCH AND ANALYZE:
+1. Search for latest news about {company_name} or {movement.ticker} from today
+2. Check if there are any company announcements, earnings, deals, or management changes
+3. Look for sector-wide trends affecting this stock (banking sector rally, IT selloff, etc.)
+4. Check broader market factors (NIFTY movement, FII/DII activity, global cues)
+5. Look for any regulatory or policy changes affecting the company/sector
+6. Check if this is part of a larger market trend or sector rotation
 
-Format EXACTLY as:
-SMS: [reason under 140 chars]
-DETAIL: [explanation with news sources]
-CONFIDENCE: [high/medium/low]
-"""
+Based on your research, provide your analysis in this EXACT format:
 
-        # Use Perplexity's online model with web search
+SMS: [One line summary under 140 characters - the main reason for the price movement]
+DETAIL: [2-4 sentences explaining the reason with specific news/events/sources you found. Mention if it's company-specific, sector-driven, or market-wide.]
+CONFIDENCE: [high/medium/low - based on how clear the reason is from your research]
+
+Remember: Search the web for current news. Do not make assumptions without finding actual news or events."""
+
+        print(f"Calling Perplexity API for {movement.ticker}...")
+
+        # Use Perplexity's sonar-pro model with web search
         response = client.chat.completions.create(
-            model="sonar",  # Perplexity's model with web search
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000
+            model="sonar-pro",  # Using sonar-pro for better search results
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a financial analyst specializing in Indian stock markets. Search the web for real-time news and provide accurate analysis of stock price movements. Always cite your sources."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1500,
+            temperature=0.2  # Lower temperature for more factual responses
         )
 
         # Parse response
         response_text = response.choices[0].message.content
+        print(f"Perplexity response received for {movement.ticker}")
 
         sms_summary = ""
         detailed = ""
@@ -505,20 +548,31 @@ CONFIDENCE: [high/medium/low]
         )
 
     except Exception as e:
-        print(f"AI analysis failed: {e}")
+        error_msg = str(e)
+        print(f"AI analysis failed for {movement.ticker}: {error_msg}")
         import traceback
         traceback.print_exc()
 
-        # Provide basic analysis without AI
+        # Provide more helpful error message
         direction_text = "up" if movement.direction == "up" else "down"
         volume_note = "on high volume" if movement.volume_ratio > 1.5 else ""
+
+        # Check for specific error types
+        if "api_key" in error_msg.lower() or "unauthorized" in error_msg.lower() or "401" in error_msg:
+            error_detail = "API key issue - please check PERPLEXITY_API_KEY in secrets"
+        elif "rate" in error_msg.lower() or "429" in error_msg:
+            error_detail = "Rate limited - try again in a few minutes"
+        elif "model" in error_msg.lower() or "404" in error_msg:
+            error_detail = "Model not found - API may have changed"
+        else:
+            error_detail = f"Error: {error_msg[:100]}"
 
         return MovementAnalysis(
             ticker=movement.ticker,
             change_percent=movement.change_percent,
             direction=movement.direction,
             summary=f"{movement.ticker} {direction_text} {abs(movement.change_percent):.1f}% {volume_note}".strip(),
-            detailed_reason=f"Stock moved {movement.change_percent:+.1f}% from ₹{movement.previous_price:.2f} to ₹{movement.current_price:.2f}. Unable to fetch news - check moneycontrol.com for details.",
+            detailed_reason=f"Stock moved {movement.change_percent:+.1f}% from ₹{movement.previous_price:.2f} to ₹{movement.current_price:.2f}. {error_detail}. Check moneycontrol.com or economictimes.com for news.",
             confidence="low",
             sources=[]
         )
