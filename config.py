@@ -127,3 +127,18 @@ TELEGRAM_ALERTS_ENABLED = True  # Enable/disable Telegram notifications
 
 # Perplexity AI (for real-time news search in movement analysis)
 PERPLEXITY_API_KEY = get_secret("PERPLEXITY_API_KEY")
+
+# Swing Trading Configuration
+SWING_TRADING_ENABLED = True
+SWING_LOOKBACK_PERIOD = 20  # Days for S/R detection
+SWING_MIN_CONFLUENCE = 2    # Minimum signals for trade
+SWING_RISK_REWARD_MIN = 1.5  # Minimum R:R ratio
+SWING_VOLUME_THRESHOLD = 1.3  # Volume multiplier for breakouts
+
+# Support/Resistance Settings
+SR_PIVOT_PERIOD = 10
+SR_TOUCH_COUNT_MIN = 2  # Zone strength
+
+# Relative Strength Settings
+RS_LOOKBACK_DAYS = 20
+RS_BENCHMARK = "^NSEI"  # NIFTY 50 index
