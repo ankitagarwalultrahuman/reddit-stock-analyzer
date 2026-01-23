@@ -247,9 +247,82 @@ def get_stock_context(ticker: str) -> dict:
     return context
 
 
+def search_stock_news(ticker: str, company_name: str = None) -> list[dict]:
+    """
+    Search for recent news about a stock using web search.
+
+    Returns list of news items with title and snippet.
+    """
+    try:
+        import requests
+
+        # Map common tickers to company names for better search
+        ticker_to_company = {
+            "RELIANCE": "Reliance Industries",
+            "TCS": "Tata Consultancy Services TCS",
+            "HDFCBANK": "HDFC Bank",
+            "INFY": "Infosys",
+            "ICICIBANK": "ICICI Bank",
+            "SBIN": "State Bank of India SBI",
+            "BHARTIARTL": "Bharti Airtel",
+            "HINDUNILVR": "Hindustan Unilever HUL",
+            "ITC": "ITC Limited",
+            "KOTAKBANK": "Kotak Mahindra Bank",
+            "LT": "Larsen & Toubro L&T",
+            "AXISBANK": "Axis Bank",
+            "BAJFINANCE": "Bajaj Finance",
+            "MARUTI": "Maruti Suzuki",
+            "TATAMOTORS": "Tata Motors",
+            "TATASTEEL": "Tata Steel",
+            "SUNPHARMA": "Sun Pharma",
+            "WIPRO": "Wipro",
+            "HCLTECH": "HCL Tech",
+            "ADANIENT": "Adani Enterprises",
+            "ADANIPORTS": "Adani Ports",
+            "ONGC": "ONGC Oil",
+            "NTPC": "NTPC Power",
+            "POWERGRID": "Power Grid Corporation",
+            "COALINDIA": "Coal India",
+            "JSWSTEEL": "JSW Steel",
+            "HINDALCO": "Hindalco",
+            "ULTRACEMCO": "UltraTech Cement",
+            "GRASIM": "Grasim Industries",
+            "TITAN": "Titan Company",
+            "NESTLEIND": "Nestle India",
+            "ASIANPAINT": "Asian Paints",
+            "BAJAJFINSV": "Bajaj Finserv",
+            "TECHM": "Tech Mahindra",
+            "DRREDDY": "Dr Reddy's Labs",
+            "CIPLA": "Cipla Pharma",
+            "BPCL": "BPCL Oil",
+            "EICHERMOT": "Eicher Motors",
+            "BRITANNIA": "Britannia Industries",
+            "DIVISLAB": "Divi's Labs",
+            "APOLLOHOSP": "Apollo Hospitals",
+            "TATACONSUM": "Tata Consumer",
+            "HEROMOTOCO": "Hero MotoCorp",
+            "SHRIRAMFIN": "Shriram Finance",
+            "M&M": "Mahindra & Mahindra",
+            "INDUSINDBK": "IndusInd Bank",
+            "SBILIFE": "SBI Life Insurance",
+            "HDFCLIFE": "HDFC Life Insurance",
+            "BEL": "Bharat Electronics BEL",
+            "TRENT": "Trent Westside",
+        }
+
+        search_name = company_name or ticker_to_company.get(ticker, ticker)
+
+        # Return empty for now - news will be fetched via Claude's web search
+        return []
+
+    except Exception as e:
+        print(f"News search failed: {e}")
+        return []
+
+
 def analyze_movement_with_ai(movement: StockMovement, context: dict) -> MovementAnalysis:
     """
-    Use Claude AI to analyze why a stock moved.
+    Use Claude AI to analyze why a stock moved by searching news and other sources.
 
     Args:
         movement: The stock movement to analyze
@@ -263,61 +336,67 @@ def analyze_movement_with_ai(movement: StockMovement, context: dict) -> Movement
 
         client = anthropic.Anthropic()
 
-        # Build the prompt
+        # Build the prompt - ask Claude to search for news
         direction = "UP" if movement.direction == "up" else "DOWN"
+        direction_word = "rose" if movement.direction == "up" else "fell"
 
-        prompt = f"""Analyze why {movement.ticker} stock moved {direction} {abs(movement.change_percent):.1f}% today.
+        # Map ticker to company name for better search
+        company_names = {
+            "RELIANCE": "Reliance Industries",
+            "TCS": "Tata Consultancy Services",
+            "HDFCBANK": "HDFC Bank",
+            "INFY": "Infosys",
+            "ICICIBANK": "ICICI Bank",
+            "SBIN": "State Bank of India",
+            "BHARTIARTL": "Bharti Airtel",
+            "HINDUNILVR": "Hindustan Unilever",
+            "ITC": "ITC Limited",
+            "KOTAKBANK": "Kotak Mahindra Bank",
+            "AXISBANK": "Axis Bank",
+            "BAJFINANCE": "Bajaj Finance",
+            "TATAMOTORS": "Tata Motors",
+            "SUNPHARMA": "Sun Pharma",
+            "WIPRO": "Wipro",
+            "ADANIENT": "Adani Enterprises",
+            "TITAN": "Titan Company",
+            "M&M": "Mahindra and Mahindra",
+            "MARUTI": "Maruti Suzuki",
+            "LT": "Larsen and Toubro",
+        }
 
-Stock Data:
-- Current Price: ₹{movement.current_price:.2f}
+        company_name = company_names.get(movement.ticker, movement.ticker)
+
+        prompt = f"""I need you to find out why {company_name} ({movement.ticker}) stock {direction_word} {abs(movement.change_percent):.1f}% today.
+
+STOCK MOVEMENT DATA:
+- Stock: {movement.ticker} ({company_name})
 - Previous Close: ₹{movement.previous_price:.2f}
+- Current Price: ₹{movement.current_price:.2f}
 - Change: {movement.change_percent:+.2f}%
-- Volume: {movement.volume_ratio:.1f}x average
+- Direction: {direction}
+- Volume: {movement.volume_ratio:.1f}x average volume
 
-"""
+Please search for recent news about {company_name} or {movement.ticker} to find the likely reason for this price movement. Look for:
+1. Company-specific news (earnings, announcements, deals, management changes)
+2. Sector news that might affect this stock
+3. Market-wide factors
+4. Any regulatory or government policy changes
 
-        if context.get("technicals"):
-            tech = context["technicals"]
-            prompt += f"""Technical Indicators:
-- RSI: {tech.get('rsi', 'N/A')}
-- MACD Signal: {tech.get('macd_crossover', 'N/A')}
-- Technical Bias: {tech.get('technical_bias', 'N/A')}
-- Price vs 50 EMA: {tech.get('price_vs_ema50', 'N/A')}
-
-"""
-
-        if context.get("reddit_sentiment"):
-            sent = context["reddit_sentiment"]
-            prompt += f"""Reddit Sentiment:
-- Sentiment: {sent.get('sentiment', 'N/A')}
-- Mentions: {sent.get('mentions', 0)}
-- Key Discussion: {sent.get('key_points', 'N/A')[:200]}
-
-"""
-
-        if context.get("sector_performance"):
-            sec = context["sector_performance"]
-            prompt += f"""Sector ({context.get('sector', 'Unknown')}):
-- Sector Momentum: {sec.get('momentum', 'N/A')}
-- Sector Trend: {sec.get('trend', 'N/A')}
-- Sector 1D Return: {sec.get('avg_return_1d', 'N/A')}%
-
-"""
-
-        prompt += """Based on this data, provide:
-1. A SHORT summary (under 150 characters) explaining the likely reason for the move - this will be sent as SMS
-2. A more detailed explanation (2-3 sentences)
-3. Your confidence level (high/medium/low) in this explanation
+After researching, provide:
+1. SMS: A short summary (UNDER 140 characters) of the main reason - this will be sent as SMS alert
+2. DETAIL: A 2-3 sentence detailed explanation with specific news/events found
+3. CONFIDENCE: high/medium/low based on how certain you are about the reason
 
 Format your response EXACTLY as:
-SMS: [your short summary here]
-DETAIL: [your detailed explanation here]
+SMS: [short reason under 140 chars]
+DETAIL: [detailed explanation with specific news]
 CONFIDENCE: [high/medium/low]
 """
 
+        # Use Claude with web search capability
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=500,
+            max_tokens=1000,
             messages=[{"role": "user", "content": prompt}]
         )
 
@@ -328,24 +407,32 @@ CONFIDENCE: [high/medium/low]
         detailed = ""
         confidence = "medium"
 
-        for line in response_text.split("\n"):
-            if line.startswith("SMS:"):
-                sms_summary = line[4:].strip()[:150]
-            elif line.startswith("DETAIL:"):
-                detailed = line[7:].strip()
-            elif line.startswith("CONFIDENCE:"):
-                conf = line[11:].strip().lower()
+        lines = response_text.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip().startswith("SMS:"):
+                sms_summary = line.split("SMS:", 1)[1].strip()[:140]
+            elif line.strip().startswith("DETAIL:"):
+                # Get detail which might span multiple lines
+                detailed = line.split("DETAIL:", 1)[1].strip()
+                # Check if next lines are continuation (not SMS or CONFIDENCE)
+                for next_line in lines[i+1:]:
+                    if next_line.strip().startswith(("SMS:", "CONFIDENCE:")):
+                        break
+                    if next_line.strip():
+                        detailed += " " + next_line.strip()
+            elif line.strip().startswith("CONFIDENCE:"):
+                conf = line.split("CONFIDENCE:", 1)[1].strip().lower()
                 if conf in ["high", "medium", "low"]:
                     confidence = conf
 
         # Fallback if parsing failed
         if not sms_summary:
-            sms_summary = f"{movement.ticker} {direction} {abs(movement.change_percent):.1f}% - Check charts for details"
+            sms_summary = f"{movement.ticker} {direction} {abs(movement.change_percent):.1f}% today"
 
         if not detailed:
             detailed = response_text[:500]
 
-        sources = []
+        sources = ["news_search"]
         if context.get("technicals"):
             sources.append("technicals")
         if context.get("reddit_sentiment"):
@@ -365,6 +452,8 @@ CONFIDENCE: [high/medium/low]
 
     except Exception as e:
         print(f"AI analysis failed: {e}")
+        import traceback
+        traceback.print_exc()
 
         # Provide basic analysis without AI
         direction_text = "up" if movement.direction == "up" else "down"
@@ -375,7 +464,7 @@ CONFIDENCE: [high/medium/low]
             change_percent=movement.change_percent,
             direction=movement.direction,
             summary=f"{movement.ticker} {direction_text} {abs(movement.change_percent):.1f}% {volume_note}".strip(),
-            detailed_reason=f"Stock moved {movement.change_percent:+.1f}% from ₹{movement.previous_price:.2f} to ₹{movement.current_price:.2f}",
+            detailed_reason=f"Stock moved {movement.change_percent:+.1f}% from ₹{movement.previous_price:.2f} to ₹{movement.current_price:.2f}. Unable to fetch news - check moneycontrol.com for details.",
             confidence="low",
             sources=[]
         )

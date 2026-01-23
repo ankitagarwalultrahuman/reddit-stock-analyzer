@@ -63,45 +63,55 @@ tab1, tab2, tab3 = st.tabs(["Check Movements", "Manual Analysis", "Alert History
 with tab1:
     st.subheader("Check Portfolio for Significant Movements")
 
-    # Stock input
-    col1, col2 = st.columns([3, 1])
+    # Handle Quick Load buttons first
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
 
-    with col1:
-        stock_input = st.text_area(
-            "Enter stock symbols (comma or newline separated)",
-            value="RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, SBIN",
-            height=100,
-            help="Enter your portfolio stocks to check for movements"
-        )
-
-    with col2:
-        st.markdown("**Quick Load:**")
-        if st.button("My Portfolio (Groww)"):
+    with col_btn1:
+        if st.button("📂 Load My Portfolio (Groww)", use_container_width=True):
             try:
                 from groww_integration import GrowwClient
                 client = GrowwClient()
                 if client.is_configured():
-                    holdings = client.get_holdings()
-                    tickers = [h.trading_symbol for h in holdings]
-                    st.session_state['loaded_tickers'] = ", ".join(tickers)
-                    st.rerun()
+                    with st.spinner("Fetching portfolio from Groww..."):
+                        holdings = client.get_holdings()
+                    if holdings:
+                        tickers = [h.trading_symbol for h in holdings]
+                        st.session_state['stock_input_value'] = ", ".join(tickers)
+                        st.success(f"Loaded {len(tickers)} stocks from Groww!")
+                        st.rerun()
+                    else:
+                        st.warning("No holdings found in Groww")
                 else:
-                    st.warning("Groww not configured")
+                    st.warning("Groww not configured. Add GROWW_API_TOKEN and GROWW_API_SECRET to secrets.")
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error loading Groww portfolio: {e}")
 
-        if st.button("NIFTY 50"):
+    with col_btn2:
+        if st.button("📊 Load NIFTY 50", use_container_width=True):
             from watchlist_manager import NIFTY50_STOCKS
-            st.session_state['loaded_tickers'] = ", ".join(NIFTY50_STOCKS[:20])
+            st.session_state['stock_input_value'] = ", ".join(NIFTY50_STOCKS)
             st.rerun()
 
-    # Use loaded tickers if available
-    if 'loaded_tickers' in st.session_state:
-        stock_input = st.session_state['loaded_tickers']
-        del st.session_state['loaded_tickers']
+    with col_btn3:
+        if st.button("🏦 Load Banking Stocks", use_container_width=True):
+            from watchlist_manager import SECTOR_STOCKS
+            st.session_state['stock_input_value'] = ", ".join(SECTOR_STOCKS.get("Banking", []))
+            st.rerun()
+
+    # Get default value from session state or use default
+    default_stocks = st.session_state.get('stock_input_value', "RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, SBIN")
+
+    # Stock input
+    stock_input = st.text_area(
+        "Enter stock symbols (comma or newline separated)",
+        value=default_stocks,
+        height=100,
+        help="Enter your portfolio stocks to check for movements"
+    )
 
     # Parse tickers
     tickers = [t.strip().upper() for t in stock_input.replace("\n", ",").split(",") if t.strip()]
+    st.caption(f"Checking {len(tickers)} stocks")
 
     if st.button("🔍 Check for Movements", type="primary"):
         if not tickers:
