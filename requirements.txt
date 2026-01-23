@@ -17,3 +17,6 @@ growwapi>=1.0.0
 
 # Optional: For Zerodha integration
 # kiteconnect>=4.0.0
+
+# SMS Alerts via Twilio
+twilio>=8.0.0
