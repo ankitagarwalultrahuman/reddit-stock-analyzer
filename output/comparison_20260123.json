@@ -1,0 +1,155 @@
+{
+  "date": "2026-01-23",
+  "summary": {
+    "total_new_stocks": 10,
+    "total_removed_stocks": 17,
+    "total_sentiment_changes": 0,
+    "total_volume_changes": 0
+  },
+  "new_stocks_pm": [
+    {
+      "ticker": "INDIAN GROWTH STORY",
+      "sentiment": "bearish",
+      "mentions": 157
+    },
+    {
+      "ticker": "ITC",
+      "sentiment": "bearish",
+      "mentions": 145
+    },
+    {
+      "ticker": "HEALTHCARE SECTOR",
+      "sentiment": "bearish",
+      "mentions": 129
+    },
+    {
+      "ticker": "ZERODHA vs GROWW",
+      "sentiment": "neutral",
+      "mentions": 34
+    },
+    {
+      "ticker": "SILVER",
+      "sentiment": "mixed",
+      "mentions": 0
+    },
+    {
+      "ticker": "GOLD/GOLD ETFs",
+      "sentiment": "bullish",
+      "mentions": 0
+    },
+    {
+      "ticker": "RUPEE WEAKNESS",
+      "sentiment": "bearish",
+      "mentions": 0
+    },
+    {
+      "ticker": "ADANI GROUP",
+      "sentiment": "bearish",
+      "mentions": 0
+    },
+    {
+      "ticker": "VEDANTA",
+      "sentiment": "bullish",
+      "mentions": 0
+    },
+    {
+      "ticker": "MARKET VOLATILITY",
+      "sentiment": "bearish",
+      "mentions": 0
+    }
+  ],
+  "removed_stocks_pm": [
+    {
+      "ticker": "HEALTHCARE SECTOR CONSOLIDATION",
+      "sentiment": "bearish",
+      "mentions": 108
+    },
+    {
+      "ticker": "MANIPAL HOSPITALS",
+      "sentiment": "neutral",
+      "mentions": 108
+    },
+    {
+      "ticker": "Silver ETFs (SILVERBEES, TATASILVER)",
+      "sentiment": "mixed",
+      "mentions": 104
+    },
+    {
+      "ticker": "SILVER ETFs",
+      "sentiment": "bearish",
+      "mentions": 104
+    },
+    {
+      "ticker": "Gold ETFs (AXISGOLD, GOLDBEES)",
+      "sentiment": "bearish",
+      "mentions": 53
+    },
+    {
+      "ticker": "GOLD ETFs",
+      "sentiment": "bearish",
+      "mentions": 53
+    },
+    {
+      "ticker": "TRUMP POLICY IMPACT",
+      "sentiment": "neutral",
+      "mentions": 48
+    },
+    {
+      "ticker": "PANIC SELLING BEHAVIOR",
+      "sentiment": "neutral",
+      "mentions": 42
+    },
+    {
+      "ticker": "STOP LOSS STRATEGIES",
+      "sentiment": "neutral",
+      "mentions": 26
+    },
+    {
+      "ticker": "MARKET VOLATILITY & CONFUSION",
+      "sentiment": "neutral",
+      "mentions": 24
+    },
+    {
+      "ticker": "FOMO TRADING PATTERNS",
+      "sentiment": "neutral",
+      "mentions": 21
+    },
+    {
+      "ticker": "NELCO",
+      "sentiment": "bearish",
+      "mentions": 11
+    },
+    {
+      "ticker": "GROWW BROKER COMPLAINTS",
+      "sentiment": "neutral",
+      "mentions": 11
+    },
+    {
+      "ticker": "MAX HEALTHCARE",
+      "sentiment": "bearish",
+      "mentions": 11
+    },
+    {
+      "ticker": "RAILWAY STOCKS (IRFC, RVNL)",
+      "sentiment": "bearish",
+      "mentions": 10
+    },
+    {
+      "ticker": "RVNL",
+      "sentiment": "bearish",
+      "mentions": 10
+    },
+    {
+      "ticker": "IRFC",
+      "sentiment": "bearish",
+      "mentions": 10
+    }
+  ],
+  "sentiment_changes": [],
+  "volume_changes": [],
+  "market_mood_shift": {
+    "am_mood": "bearish",
+    "pm_mood": "bearish",
+    "shift_description": "Market sentiment remained bearish throughout the day"
+  }
+}
