@@ -136,12 +136,13 @@ with tab1:
 
     st.dataframe(df, hide_index=True, use_container_width=True)
 
-    # Bar chart
+    # Bar chart - use the timeframe column (e.g., "5D", "20D", "60D")
+    timeframe_col = display_col.split()[0]  # "5D", "20D", or "60D"
     fig = px.bar(
         df,
         x="Sector",
-        y=[float(x.replace('%', '').replace('+', '')) for x in df[display_col.split()[0] + "D"]],
-        color=[float(x.replace('%', '').replace('+', '')) for x in df[display_col.split()[0] + "D"]],
+        y=[float(x.replace('%', '').replace('+', '')) for x in df[timeframe_col]],
+        color=[float(x.replace('%', '').replace('+', '')) for x in df[timeframe_col]],
         color_continuous_scale="RdYlGn",
         title=f"Sector Performance ({display_col})"
     )
