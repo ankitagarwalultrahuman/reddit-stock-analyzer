@@ -57,6 +57,81 @@ NIFTY_NEXT50_STOCKS = [
 NIFTY100_STOCKS = NIFTY50_STOCKS + NIFTY_NEXT50_STOCKS
 
 # =============================================================================
+# NIFTY MIDCAP 100 STOCKS (prime swing trading territory)
+# =============================================================================
+NIFTY_MIDCAP100_STOCKS = [
+    # Financial Services
+    "CRISIL", "MUTHOOTFIN", "MANAPPURAM", "IIFL", "LICHSGFIN",
+    "POONAWALLA", "CANFINHOME", "LTFH", "CREDITACC", "UJJIVANSFB",
+    # IT & Tech
+    "PERSISTENT", "COFORGE", "LTTS", "TATAELXSI", "CYIENT",
+    "INTELLECT", "MPHASIS", "MINDTREE", "SONATSOFTW", "BSOFT",
+    # Consumer & Retail
+    "TRENT", "DMART", "DEVYANI", "JUBLFOOD", "RAJESHEXPO",
+    "FINEORG", "ZOMATO", "NYKAA", "MEDANTA", "AFFLE",
+    # Pharma & Healthcare
+    "ZYDUSLIFE", "ALKEM", "IPCALAB", "LAURUSLABS", "GLENMARK",
+    "GRANULES", "MAXHEALTH", "FORTIS", "LALPATHLAB", "METROPOLIS",
+    # Industrial & Manufacturing
+    "CUMMINSIND", "THERMAX", "AIAENG", "GRINDWELL", "SCHAEFFLER",
+    "TIMKEN", "SKFINDIA", "KAJARIACER", "SUPREMEIND", "ASTRAL",
+    # Chemicals
+    "PIIND", "ATUL", "DEEPAKNTR", "NAVINFLUOR", "CLEAN",
+    "FLUOROCHEM", "AARTI", "SRF", "TATACHEM", "UPL",
+    # Auto & Ancillaries
+    "SONACOMS", "ENDURANCE", "SUNDRMFAST", "SUPRAJIT", "MINDA",
+    "CRAFTSMAN", "FIEM", "LUMAXTECH", "HAPPSTMNDS", "BIKAJI",
+    # Real Estate & Construction
+    "BRIGADE", "SOBHA", "SUNTECK", "MAHLIFE", "PRESTIGE",
+    "PHOENIXLTD", "GODREJPROP", "OBEROIRLTY", "KOLTEPATIL", "RUSTOMJEE",
+    # Utilities & Energy
+    "SJVN", "TORNTPOWER", "CESC", "TATAPOWER", "JPPOWER",
+    "NHPC", "JSL", "INOXWIND", "SUZLON", "ADANIENSOL",
+    # Others
+    "VOLTAS", "BLUESTARCO", "CROMPTON", "ORIENTELEC", "VGUARD",
+    "RELAXO", "BATA", "CAMPUS", "METROBRAND", "KPRMILL",
+]
+
+# =============================================================================
+# NIFTY SMALLCAP 100 STOCKS (high volatility, high opportunity)
+# =============================================================================
+NIFTY_SMALLCAP100_STOCKS = [
+    # Financial Services
+    "RBLBANK", "EQUITASBNK", "SURYODAY", "UJJIVAN", "DCBBANK",
+    "CSBBANK", "KTKBANK", "SOUTHBANK", "TMB", "EDELWEISS",
+    # IT & Tech
+    "HAPPSTMNDS", "TANLA", "ROUTE", "MASTEK", "DATAPATTNS",
+    "NETWEB", "NELCO", "ZENTEC", "HCLINFRA", "KSOLVES",
+    # Pharma & Healthcare
+    "MEDPLUS", "VIJAYA", "PPLPHARMA", "MANKIND", "ERIS",
+    "JBCHEPHARM", "MARKSANS", "BLISSGVS", "NATCOPHARM", "SOLARA",
+    # Auto & Components
+    "CRAFTSMAN", "SWARAJENG", "JAMNAUTO", "GABRIEL", "MUNJALSHOW",
+    "LUMAXIND", "JTEKTINDIA", "GNA", "RAMKRISHNA", "SETCO",
+    # Chemicals
+    "GALAXYSURF", "ORIENTBELL", "ANURAS", "JUBILANTFOOD", "VINYLINDIA",
+    "ROSSARI", "NOCIL", "IGPL", "PCBL", "RPSGVENT",
+    # Consumer & Retail
+    "VBL", "RADICO", "GLOBUSSPR", "ZENSARTECH", "HGINFRA",
+    "RKFORGE", "JKTYRE", "TVSSRICHAK", "BALKRISIND", "MRF",
+    # Industrial
+    "ELGIEQUIP", "ISGEC", "PRAJIND", "REDINGTON", "RITES",
+    "RAILTEL", "IRCON", "RVNL", "NBCC", "ENGINERSIN",
+    # Real Estate
+    "ASHIANA", "AHLUCONT", "SHRIRAMCIT", "KAPSTON", "MAGADSUGAR",
+    "AARTIDRUGS", "SHILPAMED", "RAJRATAN", "ROLEXRINGS", "KPITTECH",
+    # Textiles & Apparel
+    "RAYMOND", "ARVIND", "TRIDENT", "WELSPUNIND", "SIYARAM",
+    "GOKEX", "PAGEIND", "DOLLAR", "RUPA", "LUXIND",
+    # Others
+    "ROUTE", "SOLARINDS", "GPIL", "SARDAEN", "JINDALSAW",
+    "SHYAMMETL", "UNIPARTS", "HONAUT", "CERA", "HINDWAREAP",
+]
+
+# Combined Midcap + Smallcap for broad swing trading universe
+NIFTY_MIDSMALL_STOCKS = NIFTY_MIDCAP100_STOCKS + NIFTY_SMALLCAP100_STOCKS
+
+# =============================================================================
 # SECTOR-WISE STOCKS
 # =============================================================================
 SECTOR_STOCKS = {
@@ -156,6 +231,24 @@ def get_preset_watchlists() -> dict[str, Watchlist]:
             name="NIFTY_NEXT50",
             stocks=NIFTY_NEXT50_STOCKS,
             description="NIFTY Next 50 Index constituents",
+            is_preset=True,
+        ),
+        "NIFTY_MIDCAP100": Watchlist(
+            name="NIFTY_MIDCAP100",
+            stocks=NIFTY_MIDCAP100_STOCKS,
+            description="NIFTY Midcap 100 - Prime swing trading opportunities",
+            is_preset=True,
+        ),
+        "NIFTY_SMALLCAP100": Watchlist(
+            name="NIFTY_SMALLCAP100",
+            stocks=NIFTY_SMALLCAP100_STOCKS,
+            description="NIFTY Smallcap 100 - High volatility swing trades",
+            is_preset=True,
+        ),
+        "NIFTY_MIDSMALL": Watchlist(
+            name="NIFTY_MIDSMALL",
+            stocks=NIFTY_MIDSMALL_STOCKS,
+            description="Midcap + Smallcap combined (200 stocks) - Full swing trading universe",
             is_preset=True,
         ),
     }
