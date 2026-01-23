@@ -31,7 +31,10 @@ from weekly_analysis import (
     get_weekly_pulse_summary,
     WeeklyPulseReport
 )
-from watchlist_manager import NIFTY50_STOCKS, NIFTY100_STOCKS
+from watchlist_manager import (
+    NIFTY50_STOCKS, NIFTY100_STOCKS,
+    NIFTY_MIDCAP100_STOCKS, NIFTY_SMALLCAP100_STOCKS, NIFTY_MIDSMALL_STOCKS
+)
 
 
 # Sidebar
@@ -39,14 +42,20 @@ st.sidebar.header("Settings")
 
 stock_universe = st.sidebar.selectbox(
     "Stock Universe",
-    ["NIFTY 50", "NIFTY 100"],
+    ["NIFTY 50", "NIFTY 100", "Midcap 100", "Smallcap 100", "Midcap + Smallcap"],
     index=0
 )
 
 if stock_universe == "NIFTY 50":
     stocks = NIFTY50_STOCKS
-else:
+elif stock_universe == "NIFTY 100":
     stocks = NIFTY100_STOCKS
+elif stock_universe == "Midcap 100":
+    stocks = NIFTY_MIDCAP100_STOCKS
+elif stock_universe == "Smallcap 100":
+    stocks = NIFTY_SMALLCAP100_STOCKS
+else:  # Midcap + Smallcap
+    stocks = NIFTY_MIDSMALL_STOCKS
 
 
 # Cache the report generation

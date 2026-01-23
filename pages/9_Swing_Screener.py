@@ -32,7 +32,10 @@ from swing_screener import (
     SwingSetupType,
     ScreenerResult
 )
-from watchlist_manager import NIFTY50_STOCKS, NIFTY100_STOCKS, SECTOR_STOCKS
+from watchlist_manager import (
+    NIFTY50_STOCKS, NIFTY100_STOCKS, SECTOR_STOCKS,
+    NIFTY_MIDCAP100_STOCKS, NIFTY_SMALLCAP100_STOCKS, NIFTY_MIDSMALL_STOCKS
+)
 
 
 # Sidebar
@@ -41,13 +44,26 @@ st.sidebar.header("Screener Settings")
 # Stock universe selection
 universe_option = st.sidebar.selectbox(
     "Stock Universe",
-    ["NIFTY 50", "NIFTY 100", "By Sector"]
+    [
+        "NIFTY 50",
+        "NIFTY 100",
+        "Midcap 100",
+        "Smallcap 100",
+        "Midcap + Smallcap",
+        "By Sector"
+    ]
 )
 
 if universe_option == "NIFTY 50":
     stocks = NIFTY50_STOCKS
 elif universe_option == "NIFTY 100":
     stocks = NIFTY100_STOCKS
+elif universe_option == "Midcap 100":
+    stocks = NIFTY_MIDCAP100_STOCKS
+elif universe_option == "Smallcap 100":
+    stocks = NIFTY_SMALLCAP100_STOCKS
+elif universe_option == "Midcap + Smallcap":
+    stocks = NIFTY_MIDSMALL_STOCKS
 else:
     sector = st.sidebar.selectbox(
         "Select Sector",

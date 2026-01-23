@@ -98,6 +98,27 @@ with tab1:
             st.session_state['stock_input_value'] = ", ".join(SECTOR_STOCKS.get("Banking", []))
             st.rerun()
 
+    # Additional quick load buttons for Midcap/Smallcap
+    col_btn4, col_btn5, col_btn6 = st.columns(3)
+
+    with col_btn4:
+        if st.button("📈 Load Midcap 100", use_container_width=True):
+            from watchlist_manager import NIFTY_MIDCAP100_STOCKS
+            st.session_state['stock_input_value'] = ", ".join(NIFTY_MIDCAP100_STOCKS)
+            st.rerun()
+
+    with col_btn5:
+        if st.button("🚀 Load Smallcap 100", use_container_width=True):
+            from watchlist_manager import NIFTY_SMALLCAP100_STOCKS
+            st.session_state['stock_input_value'] = ", ".join(NIFTY_SMALLCAP100_STOCKS)
+            st.rerun()
+
+    with col_btn6:
+        if st.button("⚡ Load Mid+Small", use_container_width=True):
+            from watchlist_manager import NIFTY_MIDSMALL_STOCKS
+            st.session_state['stock_input_value'] = ", ".join(NIFTY_MIDSMALL_STOCKS)
+            st.rerun()
+
     # Get default value from session state or use default
     default_stocks = st.session_state.get('stock_input_value', "RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, SBIN")
 
