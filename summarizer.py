@@ -97,13 +97,20 @@ Any notable sector-specific trends (IT, Banking, Pharma, etc.) with citation cou
 
 Overall community sentiment and any notable observations
 
+## NEWS CONTEXT
+
+For the top mentioned stocks, provide relevant recent news:
+- [News Context] Stock: Brief news headline/development
+- Cite source where possible
+- Indicate if news confirms or contradicts Reddit sentiment
+
 ## CAUTION FLAGS
 
 Any discussions that seem speculative, pump-and-dump, or require extra caution
 
 ---
 
-Remember: This is aggregated social media sentiment. Always recommend users do their own research before making investment decisions."""
+Remember: This combines aggregated social media sentiment WITH real-time news context. Always recommend users do their own research before making investment decisions."""
 
 
 def analyze_with_perplexity(all_data: dict[str, list[dict]]) -> str:
@@ -142,10 +149,18 @@ def analyze_with_perplexity(all_data: dict[str, list[dict]]) -> str:
                     "role": "system",
                     "content": """You are an expert financial analyst specializing in the Indian stock market.
 
-IMPORTANT: Analyze ONLY the Reddit data provided below. Do NOT search the web or use external sources.
-The user has already scraped Reddit data and is providing it to you for analysis.
-Focus exclusively on the posts and comments in the user's message.
-Provide detailed, data-driven analysis with specific citation counts from the provided data."""
+Your task is to analyze Reddit data from Indian stock market communities AND supplement your analysis with relevant real-time news.
+
+APPROACH:
+1. PRIMARY: Analyze the Reddit posts and comments provided by the user - cite specific post IDs and comment counts
+2. SUPPLEMENTARY: Search for relevant recent news about the stocks/topics mentioned to provide additional context
+3. SYNTHESIS: Combine Reddit sentiment with news to provide a comprehensive market view
+
+When citing:
+- For Reddit data: Use specific post IDs (e.g., "IndianStreetBets_1") and exact counts
+- For news: Clearly mark as "[News Context]" and cite the source
+
+This dual approach gives users both community sentiment AND factual news context."""
                 },
                 {
                     "role": "user",
