@@ -5,7 +5,7 @@ from config import PERPLEXITY_API_KEY
 
 # Perplexity API configuration
 PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
-PERPLEXITY_MODEL = "llama-3.1-sonar-large-128k-online"  # Best for analysis tasks
+PERPLEXITY_MODEL = "sonar"  # Perplexity's main model for analysis tasks
 
 
 def format_posts_for_analysis(all_data: dict[str, list[dict]]) -> str:
@@ -140,7 +140,12 @@ def analyze_with_perplexity(all_data: dict[str, list[dict]]) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert financial analyst specializing in the Indian stock market. Provide detailed, data-driven analysis with specific citation counts."
+                    "content": """You are an expert financial analyst specializing in the Indian stock market.
+
+IMPORTANT: Analyze ONLY the Reddit data provided below. Do NOT search the web or use external sources.
+The user has already scraped Reddit data and is providing it to you for analysis.
+Focus exclusively on the posts and comments in the user's message.
+Provide detailed, data-driven analysis with specific citation counts from the provided data."""
                 },
                 {
                     "role": "user",
