@@ -1,11 +1,15 @@
-"""Summarizer module - uses Claude API to generate insights from Reddit data."""
+"""Summarizer module - uses Perplexity API to generate insights from Reddit data."""
 
-import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+from openai import OpenAI
+from config import PERPLEXITY_API_KEY
+
+# Perplexity API configuration
+PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
+PERPLEXITY_MODEL = "llama-3.1-sonar-large-128k-online"  # Best for analysis tasks
 
 
 def format_posts_for_analysis(all_data: dict[str, list[dict]]) -> str:
-    """Format scraped data into a structured text for Claude analysis."""
+    """Format scraped data into a structured text for analysis."""
     formatted_parts = []
 
     for subreddit, posts in all_data.items():
@@ -39,7 +43,7 @@ def format_posts_for_analysis(all_data: dict[str, list[dict]]) -> str:
 
 
 def get_analysis_prompt(formatted_data: str, total_posts: int, total_comments: int) -> str:
-    """Generate the analysis prompt for Claude."""
+    """Generate the analysis prompt for Perplexity."""
     return f"""You are an expert financial analyst specializing in the Indian stock market. Analyze the following Reddit posts and comments from Indian stock market communities collected over the last 48 hours.
 
 DATASET STATISTICS:
@@ -102,10 +106,10 @@ Any discussions that seem speculative, pump-and-dump, or require extra caution
 Remember: This is aggregated social media sentiment. Always recommend users do their own research before making investment decisions."""
 
 
-def analyze_with_claude(all_data: dict[str, list[dict]]) -> str:
-    """Send data to Claude API and get analysis."""
-    if not ANTHROPIC_API_KEY:
-        return "ERROR: ANTHROPIC_API_KEY not set. Please add it to your .env file."
+def analyze_with_perplexity(all_data: dict[str, list[dict]]) -> str:
+    """Send data to Perplexity API and get analysis."""
+    if not PERPLEXITY_API_KEY:
+        return "ERROR: PERPLEXITY_API_KEY not set. Please add it to your .env file."
 
     # Format the data
     formatted_data = format_posts_for_analysis(all_data)
@@ -121,36 +125,45 @@ def analyze_with_claude(all_data: dict[str, list[dict]]) -> str:
     if total_posts == 0:
         return "No posts found to analyze. The subreddits may be empty or requests failed."
 
-    print(f"\nSending {total_posts} posts ({total_comments} comments) to Claude for analysis...")
+    print(f"\nSending {total_posts} posts ({total_comments} comments) to Perplexity for analysis...")
     print(f"Data size: {len(formatted_data)} characters")
 
-    # Initialize the client
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    # Initialize the Perplexity client (OpenAI-compatible)
+    client = OpenAI(
+        api_key=PERPLEXITY_API_KEY,
+        base_url=PERPLEXITY_BASE_URL
+    )
 
     try:
-        message = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=4096,
+        response = client.chat.completions.create(
+            model=PERPLEXITY_MODEL,
             messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert financial analyst specializing in the Indian stock market. Provide detailed, data-driven analysis with specific citation counts."
+                },
                 {
                     "role": "user",
                     "content": get_analysis_prompt(formatted_data, total_posts, total_comments)
                 }
-            ]
+            ],
+            max_tokens=4096,
+            temperature=0.2  # Lower temperature for more consistent analysis
         )
 
         # Extract text from response
-        response_text = ""
-        for block in message.content:
-            if hasattr(block, 'text'):
-                response_text += block.text
+        response_text = response.choices[0].message.content
 
         return response_text
 
-    except anthropic.APIError as e:
-        return f"Claude API error: {e}"
     except Exception as e:
-        return f"Error during analysis: {e}"
+        return f"Perplexity API error: {e}"
+
+
+# Alias for backward compatibility
+def analyze_with_claude(all_data: dict[str, list[dict]]) -> str:
+    """Backward compatible alias - now uses Perplexity."""
+    return analyze_with_perplexity(all_data)
 
 
 def generate_report(analysis: str, total_posts: int, total_comments: int, subreddits: list[str], time_window_hours: int) -> str:
@@ -167,6 +180,7 @@ Data Sources: {', '.join([f'r/{s}' for s in subreddits])}
 Time Window: Last {time_window_hours} hours
 Total Posts Analyzed: {total_posts}
 Total Comments Analyzed: {total_comments}
+AI Analysis: Perplexity ({PERPLEXITY_MODEL})
 
 ================================================================================
 """
