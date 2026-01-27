@@ -1,0 +1,18 @@
+{
+  "date": "2026-01-27",
+  "summary": {
+    "total_new_stocks": 0,
+    "total_removed_stocks": 0,
+    "total_sentiment_changes": 0,
+    "total_volume_changes": 0
+  },
+  "new_stocks_pm": [],
+  "removed_stocks_pm": [],
+  "sentiment_changes": [],
+  "volume_changes": [],
+  "market_mood_shift": {
+    "am_mood": "neutral",
+    "pm_mood": "neutral",
+    "shift_description": "Market sentiment remained neutral throughout the day"
+  }
+}
