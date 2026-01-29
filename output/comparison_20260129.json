@@ -1,0 +1,69 @@
+{
+  "date": "2026-01-29",
+  "summary": {
+    "total_new_stocks": 0,
+    "total_removed_stocks": 10,
+    "total_sentiment_changes": 0,
+    "total_volume_changes": 0
+  },
+  "new_stocks_pm": [],
+  "removed_stocks_pm": [
+    {
+      "ticker": "[Gold/Silver Rally]",
+      "sentiment": "bullish",
+      "mentions": 205
+    },
+    {
+      "ticker": "[Profit Booking Debate (Gold/Silver)]",
+      "sentiment": "neutral",
+      "mentions": 68
+    },
+    {
+      "ticker": "[INR Weakness]",
+      "sentiment": "bearish",
+      "mentions": 51
+    },
+    {
+      "ticker": "[Silver ETF Specifics (SILVERBEES, TataSilv)]",
+      "sentiment": "bullish",
+      "mentions": 44
+    },
+    {
+      "ticker": "[Rupee vs. Metals Hedge]",
+      "sentiment": "bullish",
+      "mentions": 40
+    },
+    {
+      "ticker": "[Budget 2026 Expectations]",
+      "sentiment": "neutral",
+      "mentions": 35
+    },
+    {
+      "ticker": "[Defense Stocks (BEL, HAL, BDL)]",
+      "sentiment": "bullish",
+      "mentions": 29
+    },
+    {
+      "ticker": "[Copper Momentum]",
+      "sentiment": "neutral",
+      "mentions": 24
+    },
+    {
+      "ticker": "[Fed Rates & Commodities]",
+      "sentiment": "neutral",
+      "mentions": 18
+    },
+    {
+      "ticker": "[HindCopper (HINDCOPPER)]",
+      "sentiment": "bullish",
+      "mentions": 15
+    }
+  ],
+  "sentiment_changes": [],
+  "volume_changes": [],
+  "market_mood_shift": {
+    "am_mood": "bullish",
+    "pm_mood": "neutral",
+    "shift_description": "Morning optimism cooled down to neutral by evening"
+  }
+}
