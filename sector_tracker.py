@@ -11,7 +11,7 @@ Provides:
 import concurrent.futures
 from typing import Optional
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 
 from watchlist_manager import SECTOR_STOCKS, ALL_SECTORS, get_sector_stocks
@@ -91,6 +91,39 @@ class StockPerformance:
     return_20d: float = 0.0
 
 
+def _get_return_for_period(df: pd.DataFrame, calendar_days: int) -> float:
+    """
+    Calculate return using calendar date lookup with nearest-date fallback.
+    This handles trading holidays and weekends correctly.
+
+    Args:
+        df: DataFrame with DatetimeIndex and 'Close' column
+        calendar_days: Number of calendar days to look back
+
+    Returns:
+        Return as percentage, or 0.0 if not enough data
+    """
+    if df.empty or len(df) < 2:
+        return 0.0
+
+    current = float(df['Close'].iloc[-1])
+    if current == 0:
+        return 0.0
+
+    target_date = df.index[-1] - timedelta(days=calendar_days)
+
+    # Find nearest trading day at or before target_date
+    mask = df.index <= target_date
+    if not mask.any():
+        return 0.0
+
+    past_price = float(df.loc[mask, 'Close'].iloc[-1])
+    if past_price == 0:
+        return 0.0
+
+    return ((current / past_price) - 1) * 100
+
+
 def analyze_stock_for_sector(ticker: str, debug: bool = False) -> Optional[StockPerformance]:
     """Analyze a single stock for sector analysis with monthly timeframes."""
     try:
@@ -124,23 +157,12 @@ def analyze_stock_for_sector(ticker: str, debug: bool = False) -> Optional[Stock
         close = df['Close']
         current = float(close.iloc[-1])
 
-        # Monthly timeframe return calculations
-        return_1w = 0.0   # 1 week = 5 trading days
-        return_1m = 0.0   # 1 month = 20 trading days
-        return_2m = 0.0   # 2 months = 40 trading days
-        return_3m = 0.0   # 3 months = 60 trading days
-        return_6m = 0.0   # 6 months = 120 trading days
-
-        if len(close) > 5 and float(close.iloc[-5]) != 0:
-            return_1w = ((current / float(close.iloc[-5])) - 1) * 100
-        if len(close) > 20 and float(close.iloc[-20]) != 0:
-            return_1m = ((current / float(close.iloc[-20])) - 1) * 100
-        if len(close) > 40 and float(close.iloc[-40]) != 0:
-            return_2m = ((current / float(close.iloc[-40])) - 1) * 100
-        if len(close) > 60 and float(close.iloc[-60]) != 0:
-            return_3m = ((current / float(close.iloc[-60])) - 1) * 100
-        if len(close) > 120 and float(close.iloc[-120]) != 0:
-            return_6m = ((current / float(close.iloc[-120])) - 1) * 100
+        # Date-based return calculations (handles holidays/weekends correctly)
+        return_1w = _get_return_for_period(df, 7)     # 1 week = 7 calendar days
+        return_1m = _get_return_for_period(df, 30)    # 1 month = 30 calendar days
+        return_2m = _get_return_for_period(df, 60)    # 2 months = 60 calendar days
+        return_3m = _get_return_for_period(df, 90)    # 3 months = 90 calendar days
+        return_6m = _get_return_for_period(df, 180)   # 6 months = 180 calendar days
 
         if debug:
             print(f"[DEBUG] {ticker}: current={current}, 1W={return_1w:.2f}%, 1M={return_1m:.2f}%")
@@ -252,6 +274,15 @@ def analyze_sector(sector: str, max_workers: int = 5, use_parallel: bool = True)
     if len(performances) > 0:
         bullish_ratio = bullish / len(performances)
         momentum_score += (bullish_ratio - 0.5) * 20
+
+    # Momentum consistency adjustment
+    # Penalize if short-term and long-term returns diverge
+    if avg_1w != 0 and avg_1m != 0:
+        if (avg_1w > 0) != (avg_1m > 0):
+            momentum_score -= 10  # 1W and 1M have opposite signs
+    if avg_1w != 0 and avg_1m != 0 and avg_3m != 0:
+        if (avg_1w > 0) == (avg_1m > 0) == (avg_3m > 0):
+            momentum_score += 5  # All timeframes aligned
 
     momentum_score = max(0, min(100, momentum_score))
 

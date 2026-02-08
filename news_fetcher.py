@@ -13,10 +13,17 @@ from datetime import datetime, timedelta
 from typing import Optional
 from dataclasses import dataclass, field
 import json
+import re
+import hashlib
+import threading
 
-import anthropic
+from openai import OpenAI
 
-from config import get_secret, ANTHROPIC_API_KEY, CLAUDE_MODEL
+from config import get_secret, PERPLEXITY_API_KEY
+
+# Perplexity API configuration
+PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
+PERPLEXITY_MODEL = "sonar"
 
 # News API Configuration
 FINNHUB_API_KEY = get_secret("FINNHUB_API_KEY")
@@ -40,26 +47,30 @@ class NewsArticle:
 
 
 class NewsCache:
-    """Simple in-memory cache for news articles."""
+    """Thread-safe in-memory cache for news articles."""
     _cache = {}
     _timestamps = {}
+    _lock = threading.Lock()
 
     @classmethod
     def get(cls, key: str) -> Optional[list]:
-        if key in cls._cache:
-            if time.time() - cls._timestamps.get(key, 0) < NEWS_CACHE_TTL:
-                return cls._cache[key]
+        with cls._lock:
+            if key in cls._cache:
+                if time.time() - cls._timestamps.get(key, 0) < NEWS_CACHE_TTL:
+                    return cls._cache[key]
         return None
 
     @classmethod
     def set(cls, key: str, value: list):
-        cls._cache[key] = value
-        cls._timestamps[key] = time.time()
+        with cls._lock:
+            cls._cache[key] = value
+            cls._timestamps[key] = time.time()
 
     @classmethod
     def clear(cls):
-        cls._cache = {}
-        cls._timestamps = {}
+        with cls._lock:
+            cls._cache = {}
+            cls._timestamps = {}
 
 
 class FinnhubClient:
@@ -204,7 +215,8 @@ def fetch_news_for_stocks(
         List of NewsArticle objects, sorted by relevance/recency
     """
     # Check cache
-    cache_key = f"news_{'-'.join(sorted(stock_tickers[:5]))}"
+    ticker_str = '-'.join(sorted(stock_tickers))
+    cache_key = f"news_{hashlib.md5(ticker_str.encode()).hexdigest()[:12]}"
     cached = NewsCache.get(cache_key)
     if cached:
         return cached
@@ -240,7 +252,8 @@ def fetch_news_for_stocks(
             combined = headline_upper + " " + summary_upper
 
             for ticker in stock_tickers + (portfolio_tickers or []):
-                if ticker.upper() in combined:
+                pattern = r'\b' + re.escape(ticker.upper()) + r'\b'
+                if re.search(pattern, combined):
                     article.related_tickers.append(ticker)
 
             articles.append(article)
@@ -351,13 +364,13 @@ Requirements:
 """
 
 
-def analyze_news_with_claude(
+def analyze_news_with_perplexity(
     news_articles: list[NewsArticle],
     reddit_stocks: list[dict],
     portfolio_stocks: list[str] = None
 ) -> dict:
     """
-    Send news to Claude for analysis and comparison with Reddit sentiment.
+    Send news to Perplexity for analysis and comparison with Reddit sentiment.
 
     Args:
         news_articles: List of NewsArticle objects
@@ -367,13 +380,13 @@ def analyze_news_with_claude(
     Returns:
         dict with: highlights, sentiment_divergences, market_summary, key_alerts
     """
-    if not ANTHROPIC_API_KEY:
+    if not PERPLEXITY_API_KEY:
         return {
             "highlights": [],
             "sentiment_divergences": [],
             "market_summary": "API key not configured.",
             "key_alerts": [],
-            "error": "ANTHROPIC_API_KEY not set"
+            "error": "PERPLEXITY_API_KEY not set"
         }
 
     if not news_articles:
@@ -387,23 +400,31 @@ def analyze_news_with_claude(
     prompt = get_news_analysis_prompt(news_articles, reddit_stocks, portfolio_stocks)
 
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = OpenAI(
+            api_key=PERPLEXITY_API_KEY,
+            base_url=PERPLEXITY_BASE_URL
+        )
 
-        message = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=2048,
+        response = client.chat.completions.create(
+            model=PERPLEXITY_MODEL,
             messages=[
+                {
+                    "role": "system",
+                    "content": """You are a financial news analyst specializing in the Indian stock market.
+Analyze the provided news articles and Reddit sentiment data.
+Also search for any additional recent news about the mentioned stocks to provide comprehensive coverage.
+Respond ONLY with valid JSON in the exact format requested."""
+                },
                 {
                     "role": "user",
                     "content": prompt
                 }
-            ]
+            ],
+            max_tokens=2048,
+            temperature=0.2
         )
 
-        response_text = ""
-        for block in message.content:
-            if hasattr(block, 'text'):
-                response_text += block.text
+        response_text = response.choices[0].message.content
 
         # Parse JSON response
         # Find JSON in response (in case there's extra text)
@@ -432,8 +453,8 @@ def analyze_news_with_claude(
             "key_alerts": [],
             "error": str(e)
         }
-    except anthropic.APIError as e:
-        print(f"Claude API error: {e}")
+    except Exception as e:
+        print(f"Perplexity API error: {e}")
         return {
             "highlights": [],
             "sentiment_divergences": [],
@@ -441,15 +462,16 @@ def analyze_news_with_claude(
             "key_alerts": [],
             "error": str(e)
         }
-    except Exception as e:
-        print(f"News analysis error: {e}")
-        return {
-            "highlights": [],
-            "sentiment_divergences": [],
-            "market_summary": f"Error: {e}",
-            "key_alerts": [],
-            "error": str(e)
-        }
+
+
+# Backward compatible alias
+def analyze_news_with_claude(
+    news_articles: list[NewsArticle],
+    reddit_stocks: list[dict],
+    portfolio_stocks: list[str] = None
+) -> dict:
+    """Backward compatible alias - now uses Perplexity."""
+    return analyze_news_with_perplexity(news_articles, reddit_stocks, portfolio_stocks)
 
 
 def get_news_highlights(report_content: str, portfolio_stocks: list[str] = None) -> dict:

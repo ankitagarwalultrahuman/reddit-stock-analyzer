@@ -16,6 +16,7 @@ from datetime import datetime
 from watchlist_manager import get_watchlist, get_stocks_from_watchlist, NIFTY50_STOCKS
 from stock_history import fetch_stock_history
 from technical_analysis import get_technical_analysis, TechnicalSignals
+from config import SCREENER_RSI_OVERSOLD, SCREENER_RSI_OVERBOUGHT, SWING_VOLUME_THRESHOLD, ADX_STRONG_TREND
 
 
 @dataclass
@@ -48,15 +49,15 @@ class ScreenerStrategy:
 # =============================================================================
 
 def filter_rsi_oversold(signals: TechnicalSignals) -> tuple[bool, str]:
-    """RSI below 35 (oversold territory)."""
-    if signals.rsi and signals.rsi < 35:
+    """RSI below oversold threshold."""
+    if signals.rsi and signals.rsi < SCREENER_RSI_OVERSOLD:
         return True, f"RSI oversold ({signals.rsi})"
     return False, ""
 
 
 def filter_rsi_overbought(signals: TechnicalSignals) -> tuple[bool, str]:
-    """RSI above 65 (overbought territory)."""
-    if signals.rsi and signals.rsi > 65:
+    """RSI above overbought threshold."""
+    if signals.rsi and signals.rsi > SCREENER_RSI_OVERBOUGHT:
         return True, f"RSI overbought ({signals.rsi})"
     return False, ""
 
@@ -118,8 +119,8 @@ def filter_ma_trend_bearish(signals: TechnicalSignals) -> tuple[bool, str]:
 
 
 def filter_high_volume(signals: TechnicalSignals) -> tuple[bool, str]:
-    """Volume above 1.3x average."""
-    if signals.volume_ratio and signals.volume_ratio > 1.3:
+    """Volume above threshold average."""
+    if signals.volume_ratio and signals.volume_ratio > SWING_VOLUME_THRESHOLD:
         return True, f"High volume ({signals.volume_ratio}x avg)"
     return False, ""
 
@@ -163,6 +164,27 @@ def filter_technical_bearish(signals: TechnicalSignals) -> tuple[bool, str]:
     """Overall technical bias bearish (score < 40)."""
     if signals.technical_score and signals.technical_score < 40:
         return True, f"Technical score {signals.technical_score}/100"
+    return False, ""
+
+
+def filter_bullish_divergence(signals: TechnicalSignals) -> tuple[bool, str]:
+    """Bullish RSI/price divergence detected."""
+    if signals.divergence == "bullish":
+        return True, f"Bullish divergence ({signals.divergence_strength})"
+    return False, ""
+
+
+def filter_strong_trend(signals: TechnicalSignals) -> tuple[bool, str]:
+    """ADX above strong trend threshold."""
+    if signals.adx and signals.adx > ADX_STRONG_TREND:
+        return True, f"Strong trend (ADX: {signals.adx})"
+    return False, ""
+
+
+def filter_stoch_rsi_oversold(signals: TechnicalSignals) -> tuple[bool, str]:
+    """Stochastic RSI in oversold territory."""
+    if signals.stoch_rsi_k is not None and signals.stoch_rsi_k < 20:
+        return True, f"Stoch RSI oversold (K={signals.stoch_rsi_k})"
     return False, ""
 
 
@@ -255,6 +277,23 @@ STRATEGIES = {
         filters=[filter_low_volatility, filter_rsi_oversold, filter_ma_trend_bullish],
     ),
 
+    # === NEW STRATEGIES (using ADX, divergence, Stochastic RSI) ===
+    "divergence_reversal": ScreenerStrategy(
+        name="Divergence Reversal",
+        description="Bullish divergence + RSI oversold - strong reversal signal",
+        filters=[filter_bullish_divergence, filter_rsi_oversold],
+    ),
+    "strong_momentum": ScreenerStrategy(
+        name="Strong Momentum",
+        description="ADX strong trend + MACD bullish + high volume",
+        filters=[filter_strong_trend, filter_macd_bullish, filter_high_volume],
+    ),
+    "deep_value": ScreenerStrategy(
+        name="Deep Value",
+        description="Stochastic RSI oversold + near lower BB + bullish divergence",
+        filters=[filter_stoch_rsi_oversold, filter_near_bollinger_lower, filter_bullish_divergence],
+    ),
+
     # === MARKET SCAN (show everything with metrics) ===
     "full_scan": ScreenerStrategy(
         name="Full Market Scan",
@@ -332,11 +371,16 @@ def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) 
         if not matched:
             return None
 
+        # Normalized scoring: use technical_score as base, with match bonus
+        base_score = signals.technical_score or 50
+        match_bonus = len(matched) * 5
+        normalized_score = min(base_score + match_bonus, 100)
+
         return ScreenerResult(
             ticker=ticker,
             current_price=signals.current_price,
             matched_criteria=matched,
-            score=len(matched),
+            score=normalized_score,
             signals=signals,
             rsi=signals.rsi,
             macd_trend=signals.macd_trend,
@@ -527,7 +571,7 @@ def format_screener_results(results: list[ScreenerResult]) -> str:
     lines = [f"Found {len(results)} stocks:\n"]
 
     for i, r in enumerate(results, 1):
-        stars = "" * min(r.score, 5)
+        stars = "★" * min(r.score // 20, 5)
         lines.append(f"{i}. {r.ticker} {stars}")
         lines.append(f"   Price: {r.current_price}")
         lines.append(f"   RSI: {r.rsi} | MACD: {r.macd_trend} | MA: {r.ma_trend}")

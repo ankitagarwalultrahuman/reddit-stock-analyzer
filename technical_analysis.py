@@ -10,6 +10,16 @@ import numpy as np
 from typing import Optional
 from dataclasses import dataclass
 
+from config import (
+    RSI_PERIOD, RSI_OVERSOLD, RSI_OVERBOUGHT, RSI_NEAR_OVERSOLD, RSI_NEAR_OVERBOUGHT,
+    MACD_FAST, MACD_SLOW, MACD_SIGNAL,
+    EMA_SHORT, EMA_MEDIUM, EMA_LONG,
+    BB_PERIOD, BB_STD_DEV, ATR_PERIOD,
+    ADX_PERIOD, ADX_STRONG_TREND, ADX_WEAK_TREND,
+    STOCH_RSI_PERIOD, STOCH_RSI_OVERSOLD, STOCH_RSI_OVERBOUGHT,
+    VOLUME_SIGNAL_HIGH,
+)
+
 # Try importing pandas-ta, fall back to manual calculations if not available
 try:
     import pandas_ta as ta
@@ -70,6 +80,21 @@ class TechnicalSignals:
     volume_ratio: Optional[float] = None  # Current vs average
     volume_signal: Optional[str] = None  # "high", "normal", "low"
 
+    # ADX (Average Directional Index)
+    adx: Optional[float] = None
+    adx_signal: str = "neutral"  # "strong_trend", "weak_trend", "no_trend"
+    plus_di: Optional[float] = None
+    minus_di: Optional[float] = None
+
+    # Stochastic RSI
+    stoch_rsi_k: Optional[float] = None
+    stoch_rsi_d: Optional[float] = None
+    stoch_rsi_signal: str = "neutral"  # "oversold", "overbought", "bullish_cross", "bearish_cross"
+
+    # Divergence
+    divergence: Optional[str] = None  # "bullish", "bearish", None
+    divergence_strength: Optional[str] = None  # "strong", "moderate"
+
     # Overall technical score (0-100)
     technical_score: Optional[int] = None
     technical_bias: Optional[str] = None  # "bullish", "bearish", "neutral"
@@ -99,7 +124,7 @@ def calculate_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
 
-    rs = gain / loss
+    rs = gain / loss.replace(0, float('nan'))
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
@@ -260,6 +285,196 @@ def calculate_volume_analysis(df: pd.DataFrame, period: int = 20) -> tuple:
     return avg_volume, volume_ratio
 
 
+def calculate_adx(df: pd.DataFrame, period: int = ADX_PERIOD) -> tuple:
+    """
+    Calculate Average Directional Index (ADX) with +DI and -DI.
+
+    Args:
+        df: DataFrame with 'High', 'Low', 'Close' columns
+        period: ADX period (default from config)
+
+    Returns:
+        Tuple of (ADX value, +DI value, -DI value) or (None, None, None) on error
+    """
+    if df is None or df.empty or len(df) < period * 2:
+        return None, None, None
+
+    if PANDAS_TA_AVAILABLE:
+        try:
+            adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=period)
+            if adx_df is not None and not adx_df.empty:
+                adx_col = None
+                dmp_col = None
+                dmn_col = None
+                for col in adx_df.columns:
+                    if col.startswith('ADX_'):
+                        adx_col = col
+                    elif col.startswith('DMP_'):
+                        dmp_col = col
+                    elif col.startswith('DMN_'):
+                        dmn_col = col
+                if adx_col and dmp_col and dmn_col:
+                    adx_val = adx_df[adx_col].iloc[-1]
+                    plus_di = adx_df[dmp_col].iloc[-1]
+                    minus_di = adx_df[dmn_col].iloc[-1]
+                    if not np.isnan(adx_val):
+                        return float(adx_val), float(plus_di), float(minus_di)
+        except Exception:
+            pass
+
+    # Manual ADX calculation fallback
+    try:
+        high = df['High']
+        low = df['Low']
+        close = df['Close']
+
+        plus_dm = high.diff()
+        minus_dm = -low.diff()
+
+        plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+        minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        atr = tr.ewm(alpha=1/period, min_periods=period).mean()
+        plus_di = 100 * (plus_dm.ewm(alpha=1/period, min_periods=period).mean() / atr)
+        minus_di = 100 * (minus_dm.ewm(alpha=1/period, min_periods=period).mean() / atr)
+
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, float('nan'))
+        adx = dx.ewm(alpha=1/period, min_periods=period).mean()
+
+        adx_val = adx.iloc[-1]
+        if not np.isnan(adx_val):
+            return float(adx_val), float(plus_di.iloc[-1]), float(minus_di.iloc[-1])
+    except Exception:
+        pass
+
+    return None, None, None
+
+
+def calculate_stoch_rsi(df: pd.DataFrame, period: int = STOCH_RSI_PERIOD) -> tuple:
+    """
+    Calculate Stochastic RSI (%K and %D).
+
+    Args:
+        df: DataFrame with 'Close' column
+        period: Stochastic RSI period
+
+    Returns:
+        Tuple of (%K value, %D value) or (None, None)
+    """
+    if df is None or df.empty or len(df) < period * 2:
+        return None, None
+
+    if PANDAS_TA_AVAILABLE:
+        try:
+            stoch_rsi_df = ta.stochrsi(df['Close'], length=period)
+            if stoch_rsi_df is not None and not stoch_rsi_df.empty:
+                k_col = None
+                d_col = None
+                for col in stoch_rsi_df.columns:
+                    if 'STOCHRSIk' in col:
+                        k_col = col
+                    elif 'STOCHRSId' in col:
+                        d_col = col
+                if k_col and d_col:
+                    k_val = stoch_rsi_df[k_col].iloc[-1]
+                    d_val = stoch_rsi_df[d_col].iloc[-1]
+                    if not np.isnan(k_val):
+                        return float(k_val), float(d_val)
+        except Exception:
+            pass
+
+    # Manual Stochastic RSI calculation
+    try:
+        rsi_series = calculate_rsi(df, period)
+        if rsi_series is None:
+            return None, None
+
+        rsi_min = rsi_series.rolling(window=period).min()
+        rsi_max = rsi_series.rolling(window=period).max()
+        rsi_range = rsi_max - rsi_min
+
+        stoch_rsi_k = ((rsi_series - rsi_min) / rsi_range.replace(0, float('nan'))) * 100
+        stoch_rsi_d = stoch_rsi_k.rolling(window=3).mean()
+
+        k_val = stoch_rsi_k.iloc[-1]
+        d_val = stoch_rsi_d.iloc[-1]
+
+        if not np.isnan(k_val):
+            return float(k_val), float(d_val) if not np.isnan(d_val) else None
+    except Exception:
+        pass
+
+    return None, None
+
+
+def detect_divergence(df: pd.DataFrame, rsi_series: pd.Series = None, lookback: int = 20) -> dict:
+    """
+    Detect RSI/Price divergence.
+
+    Bullish divergence: price makes lower low, RSI makes higher low
+    Bearish divergence: price makes higher high, RSI makes lower high
+
+    Args:
+        df: DataFrame with 'Close', 'Low', 'High' columns
+        rsi_series: Pre-calculated RSI series (will calculate if None)
+        lookback: Number of bars to look back for divergence
+
+    Returns:
+        dict with 'type' ("bullish"/"bearish"/None) and 'strength' ("strong"/"moderate")
+    """
+    result = {"type": None, "strength": None}
+
+    if df is None or df.empty or len(df) < lookback + 10:
+        return result
+
+    try:
+        if rsi_series is None:
+            rsi_series = calculate_rsi(df)
+        if rsi_series is None or len(rsi_series) < lookback:
+            return result
+
+        recent_close = df['Close'].iloc[-lookback:]
+        recent_rsi = rsi_series.iloc[-lookback:]
+        recent_low = df['Low'].iloc[-lookback:] if 'Low' in df.columns else recent_close
+        recent_high = df['High'].iloc[-lookback:] if 'High' in df.columns else recent_close
+
+        # Split into two halves to compare
+        mid = lookback // 2
+        first_half_low = recent_low.iloc[:mid].min()
+        second_half_low = recent_low.iloc[mid:].min()
+        first_half_rsi_at_low = recent_rsi.iloc[:mid].min()
+        second_half_rsi_at_low = recent_rsi.iloc[mid:].min()
+
+        first_half_high = recent_high.iloc[:mid].max()
+        second_half_high = recent_high.iloc[mid:].max()
+        first_half_rsi_at_high = recent_rsi.iloc[:mid].max()
+        second_half_rsi_at_high = recent_rsi.iloc[mid:].max()
+
+        # Bullish divergence: price lower low, RSI higher low
+        if second_half_low < first_half_low and second_half_rsi_at_low > first_half_rsi_at_low:
+            price_diff_pct = abs((second_half_low - first_half_low) / first_half_low) * 100
+            rsi_diff = second_half_rsi_at_low - first_half_rsi_at_low
+            strength = "strong" if (price_diff_pct > 2 and rsi_diff > 5) else "moderate"
+            result = {"type": "bullish", "strength": strength}
+
+        # Bearish divergence: price higher high, RSI lower high
+        elif second_half_high > first_half_high and second_half_rsi_at_high < first_half_rsi_at_high:
+            price_diff_pct = abs((second_half_high - first_half_high) / first_half_high) * 100
+            rsi_diff = first_half_rsi_at_high - second_half_rsi_at_high
+            strength = "strong" if (price_diff_pct > 2 and rsi_diff > 5) else "moderate"
+            result = {"type": "bearish", "strength": strength}
+
+    except Exception:
+        pass
+
+    return result
+
+
 def calculate_52_week_high_low(df: pd.DataFrame, ticker: str = None) -> tuple:
     """
     Calculate 52-week high and low.
@@ -309,13 +524,13 @@ def get_rsi_signal(rsi: float) -> str:
     """Interpret RSI value."""
     if rsi is None or np.isnan(rsi):
         return "unknown"
-    if rsi < 30:
+    if rsi < RSI_OVERSOLD:
         return "oversold"
-    elif rsi > 70:
+    elif rsi > RSI_OVERBOUGHT:
         return "overbought"
-    elif rsi < 40:
+    elif rsi < RSI_NEAR_OVERSOLD:
         return "near_oversold"
-    elif rsi > 60:
+    elif rsi > RSI_NEAR_OVERBOUGHT:
         return "near_overbought"
     return "neutral"
 
@@ -399,7 +614,7 @@ def get_volume_signal(volume_ratio: float) -> str:
     if volume_ratio is None or np.isnan(volume_ratio):
         return "unknown"
 
-    if volume_ratio > 1.5:
+    if volume_ratio > VOLUME_SIGNAL_HIGH:
         return "high"
     elif volume_ratio < 0.5:
         return "low"
@@ -462,6 +677,39 @@ def calculate_technical_score(signals: TechnicalSignals) -> tuple:
             score += 10  # Confirms bullish
         elif score < 50:
             score -= 10  # Confirms bearish
+
+    # ADX contribution (trend strength amplifier)
+    if signals.adx is not None:
+        if signals.adx > ADX_STRONG_TREND:
+            # Strong trend - amplify existing directional score
+            if score > 55:
+                score += 5
+            elif score < 45:
+                score -= 5
+        elif signals.adx < ADX_WEAK_TREND:
+            # No clear trend - dampen directional score toward neutral
+            if score > 55:
+                score -= 5
+            elif score < 45:
+                score += 5
+
+    # Divergence contribution
+    if signals.divergence == "bullish":
+        score += 15
+    elif signals.divergence == "bearish":
+        score -= 15
+
+    # Bollinger Band position contribution
+    if signals.bb_position == "near_lower" or signals.bb_position == "below_lower":
+        score += 5  # Buying opportunity
+    elif signals.bb_position == "near_upper" or signals.bb_position == "above_upper":
+        score -= 5  # Overbought zone
+
+    # Stochastic RSI contribution
+    if signals.stoch_rsi_signal == "oversold" or signals.stoch_rsi_signal == "bullish_cross":
+        score += 10
+    elif signals.stoch_rsi_signal == "overbought" or signals.stoch_rsi_signal == "bearish_cross":
+        score -= 10
 
     # Clamp to 0-100
     score = max(0, min(100, score))
@@ -534,6 +782,33 @@ def get_technical_analysis(df: pd.DataFrame, ticker: str) -> TechnicalSignals:
     volume_avg, volume_ratio = calculate_volume_analysis(df)
     current_volume = int(df['Volume'].iloc[-1]) if 'Volume' in df.columns else None
 
+    # Calculate ADX
+    adx_val, plus_di_val, minus_di_val = calculate_adx(df)
+    adx_signal = "neutral"
+    if adx_val is not None:
+        if adx_val > ADX_STRONG_TREND:
+            adx_signal = "strong_trend"
+        elif adx_val < ADX_WEAK_TREND:
+            adx_signal = "no_trend"
+        else:
+            adx_signal = "weak_trend"
+
+    # Calculate Stochastic RSI
+    stoch_k, stoch_d = calculate_stoch_rsi(df)
+    stoch_rsi_signal = "neutral"
+    if stoch_k is not None:
+        if stoch_k < STOCH_RSI_OVERSOLD:
+            stoch_rsi_signal = "oversold"
+        elif stoch_k > STOCH_RSI_OVERBOUGHT:
+            stoch_rsi_signal = "overbought"
+        elif stoch_d is not None and stoch_k > stoch_d and stoch_k < 50:
+            stoch_rsi_signal = "bullish_cross"
+        elif stoch_d is not None and stoch_k < stoch_d and stoch_k > 50:
+            stoch_rsi_signal = "bearish_cross"
+
+    # Detect divergence
+    divergence_result = detect_divergence(df, rsi_series)
+
     # Calculate 52-week high/low (pass ticker to fetch full year data if needed)
     week_52_high, week_52_low = calculate_52_week_high_low(df, ticker)
     pct_from_52w_high = None
@@ -598,6 +873,21 @@ def get_technical_analysis(df: pd.DataFrame, ticker: str) -> TechnicalSignals:
         volume_avg=round(volume_avg, 0) if volume_avg else None,
         volume_ratio=round(volume_ratio, 2) if volume_ratio else None,
         volume_signal=get_volume_signal(volume_ratio),
+
+        # ADX
+        adx=round(adx_val, 1) if adx_val is not None else None,
+        adx_signal=adx_signal,
+        plus_di=round(plus_di_val, 1) if plus_di_val is not None else None,
+        minus_di=round(minus_di_val, 1) if minus_di_val is not None else None,
+
+        # Stochastic RSI
+        stoch_rsi_k=round(stoch_k, 1) if stoch_k is not None else None,
+        stoch_rsi_d=round(stoch_d, 1) if stoch_d is not None else None,
+        stoch_rsi_signal=stoch_rsi_signal,
+
+        # Divergence
+        divergence=divergence_result.get("type"),
+        divergence_strength=divergence_result.get("strength"),
     )
 
     # Calculate overall score
@@ -643,6 +933,10 @@ def get_technical_summary_text(signals: TechnicalSignals) -> str:
         f"Bollinger Position: {signals.bb_position}",
         f"Volatility (ATR%): {signals.atr_percent}% ({signals.volatility_level})",
         f"Volume: {signals.volume_signal} ({signals.volume_ratio}x avg)",
+        f"ADX: {signals.adx} ({signals.adx_signal})" if signals.adx else "",
+        f"  - +DI: {signals.plus_di}, -DI: {signals.minus_di}" if signals.plus_di else "",
+        f"Stochastic RSI: K={signals.stoch_rsi_k}, D={signals.stoch_rsi_d} ({signals.stoch_rsi_signal})" if signals.stoch_rsi_k else "",
+        f"Divergence: {signals.divergence} ({signals.divergence_strength})" if signals.divergence else "",
         "",
         f"Technical Score: {signals.technical_score}/100",
         f"Technical Bias: {signals.technical_bias.upper()}",
@@ -687,6 +981,15 @@ def signals_to_dict(signals: TechnicalSignals) -> dict:
         "volume_avg": signals.volume_avg,
         "volume_ratio": signals.volume_ratio,
         "volume_signal": signals.volume_signal,
+        "adx": signals.adx,
+        "adx_signal": signals.adx_signal,
+        "plus_di": signals.plus_di,
+        "minus_di": signals.minus_di,
+        "stoch_rsi_k": signals.stoch_rsi_k,
+        "stoch_rsi_d": signals.stoch_rsi_d,
+        "stoch_rsi_signal": signals.stoch_rsi_signal,
+        "divergence": signals.divergence,
+        "divergence_strength": signals.divergence_strength,
         "technical_score": signals.technical_score,
         "technical_bias": signals.technical_bias,
     }

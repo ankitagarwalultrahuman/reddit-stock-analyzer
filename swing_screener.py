@@ -20,6 +20,12 @@ from enum import Enum
 from stock_history import fetch_stock_history, get_current_price
 from technical_analysis import get_technical_analysis
 from watchlist_manager import NIFTY50_STOCKS, NIFTY100_STOCKS, SECTOR_STOCKS, get_sector_for_stock
+from config import (
+    SWING_VOLUME_THRESHOLD, SWING_RISK_REWARD_MIN,
+    SR_CLUSTER_THRESHOLD_PCT, SR_PIVOT_PERIOD, SR_TOUCH_COUNT_MIN,
+    FIBONACCI_LEVELS, SCREENER_RSI_OVERSOLD, SCREENER_RSI_OVERBOUGHT,
+    ADX_STRONG_TREND, RS_LOOKBACK_DAYS, RS_BENCHMARK,
+)
 
 
 class SwingSetupType(Enum):
@@ -29,6 +35,7 @@ class SwingSetupType(Enum):
     BREAKOUT = "Breakout"
     MOMENTUM_CONTINUATION = "Momentum Continuation"
     MEAN_REVERSION = "Mean Reversion"
+    BREAKDOWN = "Breakdown Warning"
     SECTOR_ROTATION = "Sector Rotation"
 
 
@@ -75,37 +82,87 @@ class ScreenerResult:
     near_52w_high: bool = False
 
 
-def find_support_resistance_levels(df: pd.DataFrame, lookback: int = 20) -> tuple[list[float], list[float]]:
+def _cluster_levels(levels: list[float], threshold_pct: float = SR_CLUSTER_THRESHOLD_PCT) -> list[tuple[float, int]]:
     """
-    Find multiple support and resistance levels.
+    Cluster nearby price levels and count touches.
+
+    Args:
+        levels: Raw price levels
+        threshold_pct: Percentage range to cluster nearby levels
 
     Returns:
-        (support_levels, resistance_levels) - sorted lists
+        List of (level, touch_count) sorted by touch count descending
+    """
+    if not levels:
+        return []
+
+    sorted_levels = sorted(levels)
+    clusters = []
+    current_cluster = [sorted_levels[0]]
+
+    for level in sorted_levels[1:]:
+        if abs(level - current_cluster[0]) / current_cluster[0] * 100 < threshold_pct:
+            current_cluster.append(level)
+        else:
+            avg = sum(current_cluster) / len(current_cluster)
+            clusters.append((round(avg, 2), len(current_cluster)))
+            current_cluster = [level]
+
+    # Don't forget the last cluster
+    avg = sum(current_cluster) / len(current_cluster)
+    clusters.append((round(avg, 2), len(current_cluster)))
+
+    # Sort by touch count (strongest levels first)
+    clusters.sort(key=lambda x: x[1], reverse=True)
+    return clusters
+
+
+def find_support_resistance_levels(df: pd.DataFrame, lookback: int = 30) -> tuple[list[float], list[float]]:
+    """
+    Find multiple support and resistance levels with clustering.
+
+    Uses flexible pivot detection (2-5 bars) and clusters nearby levels
+    within SR_CLUSTER_THRESHOLD_PCT to find the strongest zones.
+
+    Returns:
+        (support_levels, resistance_levels) - sorted lists, top 3 each
     """
     if df.empty or len(df) < lookback:
         return ([], [])
 
     recent_df = df.tail(lookback)
+    current_price = float(recent_df['Close'].iloc[-1])
 
-    # Find local minima (supports) and maxima (resistances)
-    supports = []
-    resistances = []
+    raw_supports = []
+    raw_resistances = []
 
     highs = recent_df['High'].values
     lows = recent_df['Low'].values
-    closes = recent_df['Close'].values
 
-    # Simple pivot detection
-    for i in range(2, len(recent_df) - 2):
-        # Local high (resistance)
-        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-            resistances.append(round(float(highs[i]), 2))
+    # Flexible pivot detection with windows of 2-5 bars
+    for window in [2, 3, 4, 5]:
+        for i in range(window, len(recent_df) - window):
+            # Local high (resistance)
+            is_high = all(highs[i] >= highs[i-j] for j in range(1, window+1)) and \
+                      all(highs[i] >= highs[i+j] for j in range(1, min(window+1, len(recent_df)-i)))
+            if is_high:
+                raw_resistances.append(float(highs[i]))
 
-        # Local low (support)
-        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-            supports.append(round(float(lows[i]), 2))
+            # Local low (support)
+            is_low = all(lows[i] <= lows[i-j] for j in range(1, window+1)) and \
+                     all(lows[i] <= lows[i+j] for j in range(1, min(window+1, len(recent_df)-i)))
+            if is_low:
+                raw_supports.append(float(lows[i]))
 
-    # If no pivots found, use simple high/low
+    # Cluster nearby levels
+    support_clusters = _cluster_levels(raw_supports)
+    resistance_clusters = _cluster_levels(raw_resistances)
+
+    # Filter: supports below current price, resistances above
+    supports = [level for level, count in support_clusters if level < current_price][:3]
+    resistances = [level for level, count in resistance_clusters if level > current_price][:3]
+
+    # Fallback if no pivots found
     if not resistances:
         resistances = [round(float(recent_df['High'].max()), 2)]
     if not supports:
@@ -114,13 +171,47 @@ def find_support_resistance_levels(df: pd.DataFrame, lookback: int = 20) -> tupl
     return (sorted(supports), sorted(resistances, reverse=True))
 
 
-def calculate_relative_strength(ticker: str, days: int = 20) -> float:
+def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 60) -> dict:
+    """
+    Calculate Fibonacci retracement levels from recent swing high/low.
+
+    Args:
+        df: DataFrame with 'High' and 'Low' columns
+        lookback: Number of bars to look back
+
+    Returns:
+        dict with 'swing_high', 'swing_low', and 'levels' (dict of fib level -> price)
+    """
+    if df is None or df.empty or len(df) < 10:
+        return {"swing_high": 0, "swing_low": 0, "levels": {}}
+
+    recent = df.tail(min(lookback, len(df)))
+    swing_high = float(recent['High'].max())
+    swing_low = float(recent['Low'].min())
+    diff = swing_high - swing_low
+
+    if diff <= 0:
+        return {"swing_high": swing_high, "swing_low": swing_low, "levels": {}}
+
+    levels = {}
+    for fib in FIBONACCI_LEVELS:
+        # Retracement from high
+        levels[fib] = round(swing_high - (diff * fib), 2)
+
+    return {
+        "swing_high": round(swing_high, 2),
+        "swing_low": round(swing_low, 2),
+        "levels": levels,
+    }
+
+
+def calculate_relative_strength(ticker: str, days: int = RS_LOOKBACK_DAYS) -> float:
     """Calculate relative strength vs NIFTY."""
     try:
         import yfinance as yf
 
         # Stock data
-        stock_df = fetch_stock_history(ticker, days=days + 5)
+        stock_df = fetch_stock_history(ticker, days=days + 10)
         if stock_df.empty or len(stock_df) < 5:
             return 0.0
 
@@ -365,6 +456,273 @@ def detect_breakout_setup(
     )
 
 
+def detect_momentum_continuation_setup(
+    ticker: str,
+    current_price: float,
+    tech,
+    supports: list[float],
+    volume_ratio: float,
+    rs: float,
+    fib_levels: dict
+) -> Optional[SwingSetup]:
+    """
+    Detect momentum continuation setup.
+
+    Criteria:
+    - MA trend bullish, ADX > 25 (strong trend)
+    - RSI 50-70 (not overbought)
+    - Price above EMA20
+    - Positive relative strength
+    """
+    if not tech or not tech.ma_trend or tech.ma_trend != "bullish":
+        return None
+
+    rsi = tech.rsi or 50
+    if rsi < 50 or rsi > 70:
+        return None
+
+    if tech.adx is not None and tech.adx < ADX_STRONG_TREND:
+        return None
+
+    if tech.price_vs_ema20 != "above":
+        return None
+
+    signals = []
+    signals.append(f"Strong trend (ADX: {tech.adx:.1f})" if tech.adx else "Bullish MA alignment")
+    signals.append(f"RSI healthy at {rsi:.1f}")
+    signals.append("Price above EMA20")
+
+    if rs > 0:
+        signals.append(f"Outperforming NIFTY by {rs:.1f}%")
+
+    if volume_ratio > 1.2:
+        signals.append(f"Volume confirmation {volume_ratio:.1f}x")
+
+    # Targets using Fibonacci extension if available
+    ema20 = tech.ema_20 or current_price * 0.98
+    stop_loss = ema20 * 0.97
+
+    # Use Fibonacci for targets if available
+    swing_high = fib_levels.get("swing_high", 0)
+    if swing_high and swing_high > current_price:
+        target_1 = swing_high
+        target_2 = current_price + (swing_high - current_price) * 1.618
+    else:
+        target_1 = current_price * 1.06
+        target_2 = current_price * 1.12
+
+    risk = current_price - stop_loss
+    reward = target_1 - current_price
+    risk_reward = reward / risk if risk > 0 else 0
+
+    # Weighted confidence
+    confidence = _calculate_weighted_confidence(signals, {
+        "Strong trend": 3, "ADX": 3, "Bullish MA": 2,
+        "RSI healthy": 2, "EMA20": 1.5,
+        "Outperforming": 1.5, "Volume": 2,
+    })
+
+    return SwingSetup(
+        ticker=ticker,
+        sector=get_sector_for_stock(ticker) or "Unknown",
+        setup_type=SwingSetupType.MOMENTUM_CONTINUATION,
+        current_price=current_price,
+        entry_zone=(current_price * 0.99, current_price * 1.01),
+        stop_loss=round(stop_loss, 2),
+        target_1=round(target_1, 2),
+        target_2=round(target_2, 2),
+        risk_reward=round(risk_reward, 2),
+        confidence_score=confidence,
+        signals=signals,
+        technical_summary={"adx": tech.adx, "rsi": rsi, "ma_trend": "bullish"},
+        relative_strength=rs
+    )
+
+
+def detect_mean_reversion_setup(
+    ticker: str,
+    current_price: float,
+    tech,
+    supports: list[float],
+    volume_ratio: float,
+    rs: float
+) -> Optional[SwingSetup]:
+    """
+    Detect mean reversion setup.
+
+    Criteria:
+    - RSI < 35 OR price below lower Bollinger Band
+    - Bullish divergence detected
+    - MACD histogram improving (less negative)
+    """
+    if not tech:
+        return None
+
+    rsi = tech.rsi or 50
+    below_bb = tech.bb_position in ("below_lower", "near_lower")
+    is_oversold = rsi < SCREENER_RSI_OVERSOLD
+
+    if not (is_oversold or below_bb):
+        return None
+
+    signals = []
+
+    if is_oversold:
+        signals.append(f"RSI oversold at {rsi:.1f}")
+    if below_bb:
+        signals.append(f"Near/below lower Bollinger Band")
+
+    # Bullish divergence is a strong signal for mean reversion
+    has_divergence = tech.divergence == "bullish"
+    if has_divergence:
+        signals.append(f"Bullish divergence ({tech.divergence_strength})")
+
+    # MACD improving
+    if tech.macd_histogram is not None and tech.macd_trend in ("bullish_crossover", "bullish"):
+        signals.append(f"MACD turning bullish")
+    elif not has_divergence:
+        return None  # Need either divergence or MACD improving
+
+    if volume_ratio > 1.2:
+        signals.append(f"Volume spike {volume_ratio:.1f}x")
+
+    # Targets: revert to moving averages
+    ema20 = tech.ema_20 or current_price * 1.03
+    ema50 = tech.ema_50 or current_price * 1.06
+
+    closest_support = supports[0] if supports else current_price * 0.95
+    stop_loss = closest_support * 0.97
+
+    target_1 = ema20
+    target_2 = ema50
+
+    risk = current_price - stop_loss
+    reward = target_1 - current_price
+    risk_reward = reward / risk if risk > 0 else 0
+
+    confidence = _calculate_weighted_confidence(signals, {
+        "RSI oversold": 2, "Bollinger": 2, "divergence": 3,
+        "MACD": 2, "Volume": 1.5,
+    })
+
+    return SwingSetup(
+        ticker=ticker,
+        sector=get_sector_for_stock(ticker) or "Unknown",
+        setup_type=SwingSetupType.MEAN_REVERSION,
+        current_price=current_price,
+        entry_zone=(current_price * 0.99, current_price * 1.01),
+        stop_loss=round(stop_loss, 2),
+        target_1=round(target_1, 2),
+        target_2=round(target_2, 2),
+        risk_reward=round(risk_reward, 2),
+        confidence_score=confidence,
+        signals=signals,
+        technical_summary={"rsi": rsi, "bb_position": tech.bb_position, "divergence": tech.divergence},
+        relative_strength=rs
+    )
+
+
+def detect_breakdown_setup(
+    ticker: str,
+    current_price: float,
+    tech,
+    supports: list[float],
+    volume_ratio: float,
+    rs: float
+) -> Optional[SwingSetup]:
+    """
+    Detect breakdown warning (price breaking support).
+
+    This is a WARNING signal, not a buy setup.
+
+    Criteria:
+    - Price 0-2% below support
+    - Volume > 1.3x average
+    - MACD bearish
+    - RSI > 30 (not already crashed)
+    """
+    if not tech or not supports:
+        return None
+
+    rsi = tech.rsi or 50
+    if rsi < 30:
+        return None  # Already crashed
+
+    signals = []
+    breaking_support = None
+
+    for support in supports:
+        if support > 0:
+            distance = ((current_price - support) / support) * 100
+            if -2 <= distance <= 0:
+                breaking_support = support
+                signals.append(f"Breaking support at ₹{support:.2f}")
+                break
+
+    if not breaking_support:
+        return None
+
+    if volume_ratio < SWING_VOLUME_THRESHOLD:
+        return None  # Need volume confirmation
+
+    signals.append(f"Volume breakdown {volume_ratio:.1f}x")
+
+    if tech.macd_trend in ("bearish_crossover", "bearish"):
+        signals.append(f"MACD {tech.macd_trend}")
+    else:
+        return None  # Need bearish momentum
+
+    if rsi > 30:
+        signals.append(f"RSI at {rsi:.1f} (room to fall)")
+
+    # For breakdown, stop is ABOVE support (exit if wrong)
+    stop_loss = breaking_support * 1.03
+    target_1 = breaking_support * 0.92
+    target_2 = breaking_support * 0.85
+
+    risk = stop_loss - current_price
+    reward = current_price - target_1
+    risk_reward = reward / risk if risk > 0 else 0
+
+    confidence = _calculate_weighted_confidence(signals, {
+        "Breaking support": 3, "Volume": 2, "MACD": 2, "RSI": 1,
+    })
+
+    return SwingSetup(
+        ticker=ticker,
+        sector=get_sector_for_stock(ticker) or "Unknown",
+        setup_type=SwingSetupType.BREAKDOWN,
+        current_price=current_price,
+        entry_zone=(current_price * 0.99, current_price * 1.01),
+        stop_loss=round(stop_loss, 2),
+        target_1=round(target_1, 2),
+        target_2=round(target_2, 2),
+        risk_reward=round(risk_reward, 2),
+        confidence_score=confidence,
+        signals=signals,
+        technical_summary={"support": breaking_support, "volume": volume_ratio, "rsi": rsi},
+        relative_strength=rs
+    )
+
+
+def _calculate_weighted_confidence(signals: list[str], weight_map: dict) -> int:
+    """
+    Calculate weighted confidence score from signal list.
+
+    Matches signal text against weight_map keys (case-insensitive substring).
+    Returns score clamped to 1-10.
+    """
+    total_weight = 0.0
+    for signal in signals:
+        signal_lower = signal.lower()
+        for key, weight in weight_map.items():
+            if key.lower() in signal_lower:
+                total_weight += weight
+                break
+
+    return max(1, min(int(total_weight), 10))
+
+
 def screen_stock(ticker: str) -> Optional[ScreenerResult]:
     """Screen a single stock for swing setups."""
     try:
@@ -423,6 +781,9 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
             "volume_ratio": volume_ratio
         }
 
+        # Calculate Fibonacci levels
+        fib_levels = calculate_fibonacci_levels(df)
+
         # Detect setups
         setups = []
 
@@ -450,14 +811,37 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
             breakout.relative_strength = rs
             setups.append(breakout)
 
-        # Calculate total score
-        total_score = technical_score
+        # 4. Momentum Continuation
+        momentum = detect_momentum_continuation_setup(
+            ticker, current_price, tech, supports, volume_ratio, rs, fib_levels
+        )
+        if momentum:
+            setups.append(momentum)
+
+        # 5. Mean Reversion
+        mean_rev = detect_mean_reversion_setup(
+            ticker, current_price, tech, supports, volume_ratio, rs
+        )
+        if mean_rev:
+            setups.append(mean_rev)
+
+        # 6. Breakdown Warning
+        breakdown = detect_breakdown_setup(
+            ticker, current_price, tech, supports, volume_ratio, rs
+        )
+        if breakdown:
+            setups.append(breakdown)
+
+        # Calculate total score (normalized to 0-100)
+        total_score = technical_score  # Already 0-100
         if setups:
-            total_score += max(s.confidence_score for s in setups) * 5
-        if rs > 5:
-            total_score += 10
+            setup_bonus = max(s.confidence_score for s in setups) * 3  # max 30
+            rs_bonus = min(rs * 2, 10) if rs > 0 else 0
+            total_score = min(int(technical_score * 0.6 + setup_bonus + rs_bonus), 100)
+        elif rs > 5:
+            total_score = min(technical_score + 10, 100)
         elif rs > 0:
-            total_score += 5
+            total_score = min(technical_score + 5, 100)
 
         return ScreenerResult(
             ticker=ticker,

@@ -19,6 +19,7 @@ from stock_history import fetch_stock_history, get_current_price
 from technical_analysis import get_technical_analysis, TechnicalSignals
 from sector_tracker import analyze_all_sectors, SectorMetrics
 from watchlist_manager import NIFTY50_STOCKS, SECTOR_STOCKS, get_sector_for_stock
+from config import SCREENER_RSI_OVERSOLD, RSI_OVERBOUGHT, RS_LOOKBACK_DAYS, RS_BENCHMARK
 
 
 @dataclass
@@ -41,8 +42,10 @@ class StockWeeklyMetrics:
     weekly_trend: str           # "up", "down", "sideways" based on multi-week
     support_level: Optional[float] = None
     resistance_level: Optional[float] = None
+    trend_strength: str = "moderate"  # "strong", "moderate", "weak"
     consolidating: bool = False
     breakout_candidate: bool = False
+    breakdown_candidate: bool = False  # Price breaking support
     # 52-week high/low data
     week_52_high: float = 0.0
     week_52_low: float = 0.0
@@ -86,7 +89,7 @@ class WeeklyPulseReport:
     insights: list[str] = field(default_factory=list)
 
 
-def calculate_relative_strength(ticker: str, benchmark_ticker: str = "^NSEI", days: int = 20) -> float:
+def calculate_relative_strength(ticker: str, benchmark_ticker: str = RS_BENCHMARK, days: int = RS_LOOKBACK_DAYS) -> float:
     """
     Calculate relative strength of a stock vs benchmark (NIFTY).
 
@@ -96,8 +99,8 @@ def calculate_relative_strength(ticker: str, benchmark_ticker: str = "^NSEI", da
     try:
         import yfinance as yf
 
-        # Get stock data
-        stock_df = fetch_stock_history(ticker, days=days + 5)
+        # Get stock data (extra buffer for trading holidays)
+        stock_df = fetch_stock_history(ticker, days=days + 10)
         if stock_df.empty or len(stock_df) < days:
             return 0.0
 
@@ -257,13 +260,32 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
         # Relative strength vs NIFTY over 4 weeks
         rs = calculate_relative_strength(ticker, days=20)
 
-        # Determine weekly trend based on multi-week performance
-        if four_week_change > 5 and week_change > 0:
+        # Determine weekly trend based on multi-week performance (lowered from 5% to 2%)
+        if four_week_change > 2 and week_change > 0:
             weekly_trend = "up"
-        elif four_week_change < -5 and week_change < 0:
+        elif four_week_change < -2 and week_change < 0:
             weekly_trend = "down"
         else:
             weekly_trend = "sideways"
+
+        # Calculate trend strength
+        abs_four_week = abs(four_week_change)
+        if abs_four_week > 10:
+            trend_strength = "strong"
+        elif abs_four_week > 5:
+            trend_strength = "moderate"
+        elif abs_four_week > 2:
+            trend_strength = "weak"
+        else:
+            trend_strength = "weak"
+
+        # Breakdown detection: price within 3% above support or already below
+        breakdown_candidate = False
+        if support > 0 and current_price > 0:
+            pct_above_support = ((current_price - support) / support) * 100
+            # Price is within 3% above support and trend is down
+            breakdown_candidate = (pct_above_support < 3 and weekly_trend == "down"
+                                   and volume_ratio > 1.2)
 
         # Get sector
         sector = get_sector_for_stock(ticker) or "Unknown"
@@ -286,8 +308,10 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
             weekly_trend=weekly_trend,
             support_level=support,
             resistance_level=resistance,
+            trend_strength=trend_strength,
             consolidating=consolidating,
             breakout_candidate=breakout_candidate or (consolidating and near_resistance),
+            breakdown_candidate=breakdown_candidate,
             # 52-week high/low from technical analysis
             week_52_high=tech.week_52_high if tech and tech.week_52_high else 0.0,
             week_52_low=tech.week_52_low if tech and tech.week_52_low else 0.0,
@@ -353,48 +377,16 @@ def get_nifty_performance() -> dict:
 
 def get_fii_dii_data() -> dict:
     """
-    Fetch FII/DII data using nsepython or nselib.
-    Returns empty dict if libraries not available.
+    Fetch FII/DII data.
+    Currently returns stub data - FII/DII integration requires
+    a reliable data source (nsepython/nselib are unreliable).
     """
-    result = {
+    return {
         "fii_net": None,
         "dii_net": None,
         "fii_trend": "N/A",
         "available": False
     }
-
-    # Try nsepython first
-    try:
-        from nsepython import fii_dii
-        data = fii_dii()
-        if data is not None and len(data) > 0:
-            # Parse the data (format varies)
-            result["available"] = True
-            # Note: Actual parsing depends on library version
-            return result
-    except ImportError:
-        pass
-    except Exception as e:
-        print(f"nsepython error: {e}")
-
-    # Try nselib as fallback
-    try:
-        from nselib import capital_market
-        today = datetime.now()
-        week_ago = today - timedelta(days=7)
-        data = capital_market.fii_dii_trading_activity(
-            from_date=week_ago.strftime('%d-%m-%Y'),
-            to_date=today.strftime('%d-%m-%Y')
-        )
-        if data is not None:
-            result["available"] = True
-            return result
-    except ImportError:
-        pass
-    except Exception as e:
-        print(f"nselib error: {e}")
-
-    return result
 
 
 def generate_weekly_pulse(
@@ -446,10 +438,10 @@ def generate_weekly_pulse(
     breakout_candidates = [s for s in stock_metrics if s.breakout_candidate]
     breakout_candidates = sorted(breakout_candidates, key=lambda x: x.relative_strength, reverse=True)[:10]
 
-    oversold_stocks = [s for s in stock_metrics if s.rsi < 35]
+    oversold_stocks = [s for s in stock_metrics if s.rsi < SCREENER_RSI_OVERSOLD]
     oversold_stocks = sorted(oversold_stocks, key=lambda x: x.rsi)[:10]
 
-    overbought_stocks = [s for s in stock_metrics if s.rsi > 70]
+    overbought_stocks = [s for s in stock_metrics if s.rsi > RSI_OVERBOUGHT]
     overbought_stocks = sorted(overbought_stocks, key=lambda x: x.rsi, reverse=True)[:10]
 
     rs_leaders = sorted(stock_metrics, key=lambda x: x.relative_strength, reverse=True)[:10]
@@ -457,7 +449,7 @@ def generate_weekly_pulse(
     # Calculate market breadth
     advances = len([s for s in stock_metrics if s.week_change_pct > 0])
     declines = len([s for s in stock_metrics if s.week_change_pct < 0])
-    unchanged = len([s for s in stock_metrics if s.week_change_pct == 0])
+    unchanged = len([s for s in stock_metrics if abs(s.week_change_pct) < 0.01])
 
     # Get FII/DII data
     fii_dii = get_fii_dii_data()

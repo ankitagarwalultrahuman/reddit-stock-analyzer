@@ -378,6 +378,97 @@ def display_technical_indicators(technicals: dict):
             </div>
             """, unsafe_allow_html=True)
 
+    # Fourth row - ADX and Stochastic RSI
+    col10, col11, col12 = st.columns(3)
+
+    with col10:
+        st.markdown("### ADX")
+        adx = technicals.get("adx")
+        adx_signal = technicals.get("adx_signal", "neutral")
+        plus_di = technicals.get("plus_di")
+        minus_di = technicals.get("minus_di")
+
+        color_class = "metric-neutral"
+        if adx_signal == "strong_trend":
+            color_class = "metric-positive"
+        elif adx_signal == "no_trend":
+            color_class = "metric-negative"
+
+        adx_display = f"{adx}" if adx is not None else "N/A"
+        di_text = ""
+        if plus_di is not None and minus_di is not None:
+            di_text = f"+DI: {plus_di} / -DI: {minus_di}"
+        else:
+            di_text = "DI data unavailable"
+
+        st.markdown(f"""
+        <div class="indicator-box">
+            <h2 class="{color_class}">{adx_display}</h2>
+            <p>{adx_signal.replace('_', ' ').title()}</p>
+            <p style="font-size: 0.85rem; margin-top: 0.25rem;">{di_text}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col11:
+        st.markdown("### Stochastic RSI")
+        stoch_k = technicals.get("stoch_rsi_k")
+        stoch_d = technicals.get("stoch_rsi_d")
+        stoch_signal = technicals.get("stoch_rsi_signal", "neutral")
+
+        color_class = "metric-neutral"
+        if stoch_signal in ("oversold", "bullish_cross"):
+            color_class = "metric-positive"
+        elif stoch_signal in ("overbought", "bearish_cross"):
+            color_class = "metric-negative"
+
+        k_display = f"{stoch_k}" if stoch_k is not None else "N/A"
+        d_display = f"{stoch_d}" if stoch_d is not None else "N/A"
+
+        st.markdown(f"""
+        <div class="indicator-box">
+            <h2 class="{color_class}">K: {k_display} / D: {d_display}</h2>
+            <p>{stoch_signal.replace('_', ' ').title()}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col12:
+        st.markdown("### Divergence")
+        divergence = technicals.get("divergence")
+        divergence_strength = technicals.get("divergence_strength")
+
+        if divergence is not None:
+            strength_label = f" ({divergence_strength.title()})" if divergence_strength else ""
+            if divergence == "bullish":
+                color_class = "metric-positive"
+            elif divergence == "bearish":
+                color_class = "metric-negative"
+            else:
+                color_class = "metric-neutral"
+
+            st.markdown(f"""
+            <div class="indicator-box">
+                <h2 class="{color_class}">{divergence.title()}{strength_label}</h2>
+                <p>RSI / Price Divergence Detected</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="indicator-box">
+                <h2 class="metric-neutral">None</h2>
+                <p>No divergence detected</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Divergence alert - prominent display when divergence is detected
+    divergence = technicals.get("divergence")
+    divergence_strength = technicals.get("divergence_strength")
+    if divergence is not None:
+        strength_label = f" ({divergence_strength.title()})" if divergence_strength else ""
+        if divergence == "bearish":
+            st.warning(f"Bearish Divergence Detected{strength_label}: Price is making higher highs while RSI is making lower highs. This may signal a potential reversal to the downside.")
+        elif divergence == "bullish":
+            st.success(f"Bullish Divergence Detected{strength_label}: Price is making lower lows while RSI is making higher lows. This may signal a potential reversal to the upside.")
+
 
 def display_confluence_signals(report_content: str):
     """Display confluence signals section."""

@@ -84,6 +84,12 @@ TECHNICAL_HISTORY_DAYS = 60  # Days of price history for indicator calculations
 RSI_PERIOD = 14
 RSI_OVERSOLD = 30
 RSI_OVERBOUGHT = 70
+RSI_NEAR_OVERSOLD = 40
+RSI_NEAR_OVERBOUGHT = 60
+
+# Screener-specific RSI (wider bands to catch more swing candidates early)
+SCREENER_RSI_OVERSOLD = 35
+SCREENER_RSI_OVERBOUGHT = 65
 
 # MACD settings
 MACD_FAST = 12
@@ -101,6 +107,22 @@ BB_STD_DEV = 2.0
 
 # ATR settings
 ATR_PERIOD = 14
+
+# Volume thresholds
+VOLUME_SIGNAL_HIGH = 1.5  # Threshold for "high" volume signal classification
+
+# ADX (Average Directional Index) settings
+ADX_PERIOD = 14
+ADX_STRONG_TREND = 25  # ADX above this = strong trend
+ADX_WEAK_TREND = 20    # ADX below this = no clear trend
+
+# Stochastic RSI settings
+STOCH_RSI_PERIOD = 14
+STOCH_RSI_OVERSOLD = 20
+STOCH_RSI_OVERBOUGHT = 80
+
+# Fibonacci retracement levels
+FIBONACCI_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786]
 
 # Confluence Signal settings
 MIN_CONFLUENCE_SCORE = 2  # Minimum score to consider a signal
@@ -138,6 +160,7 @@ SWING_VOLUME_THRESHOLD = 1.3  # Volume multiplier for breakouts
 # Support/Resistance Settings
 SR_PIVOT_PERIOD = 10
 SR_TOUCH_COUNT_MIN = 2  # Zone strength
+SR_CLUSTER_THRESHOLD_PCT = 1.5  # % range to cluster nearby S/R levels
 
 # Relative Strength Settings
 RS_LOOKBACK_DAYS = 20

@@ -79,6 +79,11 @@ st.sidebar.caption(f"• Stocks analyzed: {report.market_breadth['advances'] + r
 st.sidebar.caption(f"• Gainers: {len(report.top_gainers)}")
 st.sidebar.caption(f"• Losers: {len(report.top_losers)}")
 st.sidebar.caption(f"• Breakouts: {len(report.breakout_candidates)}")
+_all_stocks_for_sidebar = (report.top_gainers + report.top_losers + report.rs_leaders
+                           + report.oversold_stocks + report.overbought_stocks
+                           + report.breakout_candidates)
+_breakdown_count = len(set(s.ticker for s in _all_stocks_for_sidebar if s.breakdown_candidate))
+st.sidebar.caption(f"• Breakdowns: {_breakdown_count}")
 st.sidebar.caption(f"• Oversold: {len(report.oversold_stocks)}")
 
 # Main content - NIFTY multi-week performance
@@ -214,7 +219,7 @@ with tab2:
                 "1W": f"{stock.week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": stock.weekly_trend,
+                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
                 "RSI": stock.rsi,
                 "RS": f"{stock.relative_strength:+.1f}%"
             })
@@ -317,7 +322,7 @@ with tab4:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": stock.weekly_trend,
+                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%",
                 "Volume": f"{stock.volume_ratio:.1f}x",
@@ -356,6 +361,73 @@ with tab4:
     else:
         st.info("No breakout candidates found this week")
 
+    # Breakdown Candidates section
+    st.markdown("---")
+    st.subheader("📉 Breakdown Candidates")
+    st.caption("Stocks near or breaking support with downward momentum")
+
+    # Gather breakdown candidates from all analyzed stocks
+    all_analyzed_stocks = (report.top_gainers + report.top_losers + report.rs_leaders
+                           + report.oversold_stocks + report.overbought_stocks
+                           + report.breakout_candidates)
+    seen_breakdown = set()
+    breakdown_candidates = []
+    for s in all_analyzed_stocks:
+        if s.breakdown_candidate and s.ticker not in seen_breakdown:
+            seen_breakdown.add(s.ticker)
+            breakdown_candidates.append(s)
+    breakdown_candidates = sorted(breakdown_candidates, key=lambda x: x.week_change_pct)[:10]
+
+    if breakdown_candidates:
+        breakdown_data = []
+        for stock in breakdown_candidates:
+            breakdown_data.append({
+                "Stock": stock.ticker,
+                "Sector": stock.sector,
+                "Price": f"₹{stock.current_price:.0f}",
+                "1W": f"{stock.week_change_pct:+.1f}%",
+                "2W": f"{stock.two_week_change_pct:+.1f}%",
+                "4W": f"{stock.four_week_change_pct:+.1f}%",
+                "6W": f"{stock.month_change_pct:+.1f}%",
+                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
+                "RSI": f"{stock.rsi:.0f}",
+                "RS": f"{stock.relative_strength:+.1f}%",
+                "Volume": f"{stock.volume_ratio:.1f}x",
+                "Support": f"₹{stock.support_level:.0f}" if stock.support_level else "N/A",
+                "Resistance": f"₹{stock.resistance_level:.0f}" if stock.resistance_level else "N/A"
+            })
+
+        st.dataframe(pd.DataFrame(breakdown_data), hide_index=True, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### Detailed View")
+
+        for stock in breakdown_candidates:
+            with st.expander(f"{stock.ticker} - {stock.sector}", expanded=False):
+                cols = st.columns(5)
+                cols[0].metric("Price", f"₹{stock.current_price:.2f}")
+                cols[1].metric("1W", f"{stock.week_change_pct:+.1f}%")
+                cols[2].metric("4W", f"{stock.four_week_change_pct:+.1f}%")
+                cols[3].metric("RS vs NIFTY", f"{stock.relative_strength:+.1f}%")
+                cols[4].metric("Volume", f"{stock.volume_ratio:.1f}x")
+
+                st.markdown(f"**Support:** ₹{stock.support_level} | **Resistance:** ₹{stock.resistance_level}")
+
+                signals = []
+                if stock.near_support:
+                    signals.append("⚠️ Near Support")
+                if stock.macd_signal == "bearish_crossover" or stock.macd_signal == "bearish":
+                    signals.append("🔴 MACD Bearish")
+                if stock.volume_ratio > 1.5:
+                    signals.append("📊 Volume Spike")
+                if stock.rsi < 35:
+                    signals.append("📉 Oversold")
+
+                if signals:
+                    st.markdown(" | ".join(signals))
+    else:
+        st.info("No breakdown candidates found this week")
+
 
 with tab5:
     st.subheader("📉 Oversold Stocks (RSI < 35)")
@@ -372,7 +444,7 @@ with tab5:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": stock.weekly_trend,
+                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%",
                 "Support": f"₹{stock.support_level:.0f}" if stock.support_level else "N/A",
@@ -411,7 +483,7 @@ with tab5:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": stock.weekly_trend,
+                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%"
             })
@@ -452,7 +524,7 @@ with tab6:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": stock.weekly_trend,
+                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
                 "RS vs NIFTY": f"{stock.relative_strength:+.1f}%",
                 "RSI": f"{stock.rsi:.0f}",
                 "Bias": stock.technical_bias

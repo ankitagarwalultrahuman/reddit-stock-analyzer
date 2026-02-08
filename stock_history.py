@@ -73,21 +73,31 @@ SPECIAL_TICKER_MAPPINGS = {
 
 
 def init_cache_db():
-    """Initialize SQLite cache database."""
+    """Initialize SQLite cache database with days-aware keying."""
     conn = sqlite3.connect(CACHE_DB)
     cursor = conn.cursor()
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock_cache (
-            ticker TEXT PRIMARY KEY,
+            ticker TEXT NOT NULL,
+            days INTEGER DEFAULT 0,
             data TEXT NOT NULL,
             fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMP
         )
     """)
 
+    # Migration: add days column if upgrading from old schema
+    try:
+        cursor.execute("ALTER TABLE stock_cache ADD COLUMN days INTEGER DEFAULT 0")
+    except Exception:
+        pass  # Column already exists
+
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_expires ON stock_cache(expires_at)
+    """)
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_days ON stock_cache(ticker, days)
     """)
 
     conn.commit()
@@ -130,8 +140,8 @@ def get_nse_symbol(ticker: str) -> str:
     return f"{normalized}.NS"
 
 
-def get_cached_data(ticker: str) -> Optional[pd.DataFrame]:
-    """Retrieve cached price data if not expired."""
+def get_cached_data(ticker: str, days: int = 0) -> Optional[pd.DataFrame]:
+    """Retrieve cached price data if not expired, keyed by ticker and days."""
     init_cache_db()
 
     conn = sqlite3.connect(CACHE_DB)
@@ -139,8 +149,8 @@ def get_cached_data(ticker: str) -> Optional[pd.DataFrame]:
 
     cursor.execute("""
         SELECT data FROM stock_cache
-        WHERE ticker = ? AND expires_at > datetime('now')
-    """, (ticker.upper(),))
+        WHERE ticker = ? AND days = ? AND expires_at > datetime('now')
+    """, (ticker.upper(), days))
 
     row = cursor.fetchone()
     conn.close()
@@ -154,8 +164,8 @@ def get_cached_data(ticker: str) -> Optional[pd.DataFrame]:
     return None
 
 
-def cache_data(ticker: str, df: pd.DataFrame):
-    """Store price data in cache."""
+def cache_data(ticker: str, df: pd.DataFrame, days: int = 0):
+    """Store price data in cache, keyed by ticker and days."""
     init_cache_db()
 
     conn = sqlite3.connect(CACHE_DB)
@@ -167,9 +177,9 @@ def cache_data(ticker: str, df: pd.DataFrame):
     data_json = df.to_json(date_format='iso')
 
     cursor.execute("""
-        INSERT OR REPLACE INTO stock_cache (ticker, data, fetched_at, expires_at)
-        VALUES (?, ?, datetime('now'), ?)
-    """, (ticker.upper(), data_json, expires_at.isoformat()))
+        INSERT OR REPLACE INTO stock_cache (ticker, days, data, fetched_at, expires_at)
+        VALUES (?, ?, ?, datetime('now'), ?)
+    """, (ticker.upper(), days, data_json, expires_at.isoformat()))
 
     conn.commit()
     conn.close()
@@ -252,7 +262,7 @@ def fetch_stock_history(ticker: str, days: int = 30, force_refresh: bool = False
 
     # Check cache first (unless force_refresh is True)
     if not force_refresh:
-        cached = get_cached_data(normalized_ticker)
+        cached = get_cached_data(normalized_ticker, days)
         if cached is not None and not cached.empty:
             return cached
 
@@ -284,7 +294,7 @@ def fetch_stock_history(ticker: str, days: int = 30, force_refresh: bool = False
             # Reset index to make Date a column
             df = df.reset_index()
             df = df.rename(columns={'index': 'Date'})
-            cache_data(normalized_ticker, df)
+            cache_data(normalized_ticker, df, days)
 
         return df
 
@@ -324,7 +334,7 @@ def get_current_price(ticker: str) -> dict:
             current_price = info.last_price
             previous_close = info.previous_close
 
-            if current_price and previous_close:
+            if current_price and previous_close and previous_close != 0:
                 change_percent = ((current_price - previous_close) / previous_close) * 100
                 return {
                     "success": True,
@@ -342,7 +352,7 @@ def get_current_price(ticker: str) -> dict:
         current_price = info.get('currentPrice') or info.get('regularMarketPrice')
         previous_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
 
-        if current_price and previous_close:
+        if current_price and previous_close and previous_close != 0:
             change_percent = ((current_price - previous_close) / previous_close) * 100
             return {
                 "success": True,
@@ -358,7 +368,7 @@ def get_current_price(ticker: str) -> dict:
         if not df.empty:
             current_price = float(df['Close'].iloc[-1])
             previous_close = float(df['Close'].iloc[-2]) if len(df) > 1 else current_price
-            change_percent = ((current_price - previous_close) / previous_close) * 100 if previous_close else 0
+            change_percent = ((current_price - previous_close) / previous_close) * 100 if previous_close and previous_close != 0 else 0
             return {
                 "success": True,
                 "ticker": ticker,
@@ -427,9 +437,12 @@ def calculate_performance_metrics(df: pd.DataFrame) -> dict:
     # Total return
     total_return = (close_prices.iloc[-1] / close_prices.iloc[0] - 1) * 100
 
-    # Annualized return (assuming 252 trading days)
+    # Annualized return (only meaningful for periods >= 90 trading days)
     num_days = len(df)
-    annualized_return = ((1 + total_return/100) ** (252/num_days) - 1) * 100
+    if num_days >= 90:
+        annualized_return = ((1 + total_return/100) ** (252/num_days) - 1) * 100
+    else:
+        annualized_return = None  # Not meaningful for short periods
 
     # Volatility (annualized)
     daily_vol = daily_returns.std()
@@ -437,8 +450,11 @@ def calculate_performance_metrics(df: pd.DataFrame) -> dict:
 
     # Sharpe ratio (6% risk-free rate for India)
     risk_free_rate = 0.06
-    excess_return = annualized_return/100 - risk_free_rate
-    sharpe_ratio = excess_return / (volatility/100) if volatility > 0 else 0
+    if annualized_return is not None and volatility > 0:
+        excess_return = annualized_return/100 - risk_free_rate
+        sharpe_ratio = excess_return / (volatility/100)
+    else:
+        sharpe_ratio = 0
 
     # Max drawdown
     rolling_max = close_prices.cummax()
@@ -451,7 +467,8 @@ def calculate_performance_metrics(df: pd.DataFrame) -> dict:
 
     return {
         'total_return': round(total_return, 2),
-        'annualized_return': round(annualized_return, 2),
+        'period_return': round(total_return, 2),  # Always available regardless of period length
+        'annualized_return': round(annualized_return, 2) if annualized_return is not None else None,
         'volatility': round(volatility, 2),
         'sharpe_ratio': round(sharpe_ratio, 2),
         'max_drawdown': round(max_drawdown, 2),
@@ -627,13 +644,14 @@ def get_price_at_date(ticker: str, target_date: str) -> Optional[float]:
     Returns:
         Closing price or None if not available
     """
-    df = fetch_stock_history(ticker, days=30)
+    # Calculate how many days we need to fetch based on target date
+    target = pd.to_datetime(target_date).date()
+    days_needed = (datetime.now().date() - target).days + 7  # buffer for weekends
+    days_needed = max(days_needed, 30)  # minimum 30 days
+    df = fetch_stock_history(ticker, days=days_needed)
 
     if df.empty or 'Date' not in df.columns:
         return None
-
-    # Convert target_date to datetime for comparison
-    target = pd.to_datetime(target_date).date()
 
     # Find the row with matching date (or closest earlier date)
     df['date_only'] = pd.to_datetime(df['Date']).dt.date
@@ -661,12 +679,15 @@ def get_prices_for_outcomes(ticker: str, signal_date: str) -> dict:
     Returns:
         Dict with price_1d, price_3d, price_5d, price_10d
     """
-    df = fetch_stock_history(ticker, days=20)  # Fetch extra for buffer
+    # Calculate days needed: from signal date to now, plus 15 for outcome tracking
+    signal_dt = pd.to_datetime(signal_date).date()
+    days_since_signal = (datetime.now().date() - signal_dt).days
+    days_needed = days_since_signal + 15  # Need signal date + up to 10 trading days after
+    days_needed = max(days_needed, 30)
+    df = fetch_stock_history(ticker, days=days_needed)
 
     if df.empty or 'Date' not in df.columns:
         return {}
-
-    signal_dt = pd.to_datetime(signal_date).date()
     df['date_only'] = pd.to_datetime(df['Date']).dt.date
 
     prices = {}

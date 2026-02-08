@@ -6,6 +6,9 @@ Identifies swing trading opportunities:
 - Pullback to EMA setups
 - Breakout setups
 - Momentum continuation setups
+- Mean reversion setups
+- Sector rotation setups
+- Breakdown warning signals
 """
 
 import streamlit as st
@@ -147,11 +150,14 @@ if summary.get("setup_breakdown"):
 
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🎯 All Setups",
     "📈 Oversold Bounces",
     "🚀 Breakouts",
-    "📊 Pullbacks"
+    "📊 Pullbacks",
+    "💨 Momentum Continuation",
+    "🔄 Mean Reversion",
+    "⚠️ Breakdown Warning"
 ])
 
 
@@ -163,19 +169,31 @@ with tab1:
         all_setups = get_top_swing_setups(results, top_n=20)
 
         for setup in all_setups:
+            is_breakdown = setup.setup_type == SwingSetupType.BREAKDOWN
+
             setup_emoji = {
                 SwingSetupType.OVERSOLD_BOUNCE: "📉",
                 SwingSetupType.BREAKOUT: "🚀",
                 SwingSetupType.PULLBACK_TO_EMA: "📊",
                 SwingSetupType.MOMENTUM_CONTINUATION: "💨",
                 SwingSetupType.MEAN_REVERSION: "🔄",
-                SwingSetupType.SECTOR_ROTATION: "🔀"
+                SwingSetupType.SECTOR_ROTATION: "🔀",
+                SwingSetupType.BREAKDOWN: "⚠️"
             }.get(setup.setup_type, "📌")
 
+            # Breakdown setups are warnings - display with red styling
+            if is_breakdown:
+                expander_label = f"{setup_emoji} {setup.ticker} - BREAKDOWN WARNING (Confidence: {setup.confidence_score}/10)"
+            else:
+                expander_label = f"{setup_emoji} {setup.ticker} - {setup.setup_type.value} (Confidence: {setup.confidence_score}/10)"
+
             with st.expander(
-                f"{setup_emoji} {setup.ticker} - {setup.setup_type.value} (Confidence: {setup.confidence_score}/10)",
+                expander_label,
                 expanded=setup.confidence_score >= 7
             ):
+                if is_breakdown:
+                    st.warning("This is a BREAKDOWN warning signal - not a buy setup. Consider exiting or avoiding this stock.")
+
                 # Key metrics
                 cols = st.columns(5)
                 cols[0].metric("Price", f"₹{setup.current_price:.2f}")
@@ -191,14 +209,39 @@ with tab1:
                 cols2[2].metric("RS vs NIFTY", f"{setup.relative_strength:+.1f}%")
                 cols2[3].metric("Confidence", f"{setup.confidence_score}/10")
 
+                # ADX and Divergence info
+                tech = setup.technical_summary or {}
+                adx_val = tech.get("adx")
+                divergence_val = tech.get("divergence")
+                divergence_strength = tech.get("divergence_strength")
+
+                if adx_val is not None or divergence_val is not None:
+                    st.markdown("**Advanced Indicators:**")
+                    adx_cols = st.columns(3)
+                    if adx_val is not None:
+                        adx_label = "Strong" if adx_val >= 25 else "Weak"
+                        adx_cols[0].metric("ADX", f"{adx_val:.1f} ({adx_label})")
+                    if divergence_val is not None:
+                        adx_cols[1].metric("Divergence", divergence_val)
+                    if divergence_strength is not None:
+                        adx_cols[2].metric("Div. Strength", divergence_strength)
+
                 # Signals
-                st.markdown("**Bullish Signals:**")
-                for signal in setup.signals:
-                    st.markdown(f"✅ {signal}")
+                if is_breakdown:
+                    st.markdown("**Bearish Signals:**")
+                    for signal in setup.signals:
+                        st.markdown(f"🔴 {signal}")
+                else:
+                    st.markdown("**Bullish Signals:**")
+                    for signal in setup.signals:
+                        st.markdown(f"✅ {signal}")
 
                 # Trade plan
                 st.markdown("---")
-                st.markdown("**Trade Plan:**")
+                if is_breakdown:
+                    st.markdown("**Risk Assessment:**")
+                else:
+                    st.markdown("**Trade Plan:**")
                 risk_pct = ((setup.current_price - setup.stop_loss) / setup.current_price) * 100
                 reward_pct = ((setup.target_1 - setup.current_price) / setup.current_price) * 100
 
@@ -277,6 +320,19 @@ with tab3:
                 cols[2].metric("Volume", f"{setup.technical_summary.get('volume', 1):.1f}x")
                 cols[3].metric("R:R", f"{setup.risk_reward:.1f}")
 
+                # ADX and Divergence info
+                tech = setup.technical_summary or {}
+                adx_val = tech.get("adx")
+                divergence_val = tech.get("divergence")
+                if adx_val is not None or divergence_val is not None:
+                    adx_cols = st.columns(2)
+                    if adx_val is not None:
+                        adx_label = "Strong" if adx_val >= 25 else "Weak"
+                        adx_cols[0].metric("ADX (Trend Strength)", f"{adx_val:.1f} ({adx_label})")
+                    if divergence_val is not None:
+                        div_str = tech.get("divergence_strength", "")
+                        adx_cols[1].metric("Divergence", f"{divergence_val} ({div_str})" if div_str else divergence_val)
+
                 st.markdown("**Signals:**")
                 for signal in setup.signals:
                     st.markdown(f"✅ {signal}")
@@ -316,6 +372,19 @@ with tab4:
                 cols[3].metric("RSI", f"{setup.technical_summary.get('rsi', 'N/A')}")
                 cols[4].metric("R:R", f"{setup.risk_reward:.1f}")
 
+                # ADX and Divergence info
+                tech = setup.technical_summary or {}
+                adx_val = tech.get("adx")
+                divergence_val = tech.get("divergence")
+                if adx_val is not None or divergence_val is not None:
+                    adx_cols = st.columns(2)
+                    if adx_val is not None:
+                        adx_label = "Strong" if adx_val >= 25 else "Weak"
+                        adx_cols[0].metric("ADX (Trend Strength)", f"{adx_val:.1f} ({adx_label})")
+                    if divergence_val is not None:
+                        div_str = tech.get("divergence_strength", "")
+                        adx_cols[1].metric("Divergence", f"{divergence_val} ({div_str})" if div_str else divergence_val)
+
                 st.markdown("**Signals:**")
                 for signal in setup.signals:
                     st.markdown(f"✅ {signal}")
@@ -329,6 +398,169 @@ with tab4:
 
     else:
         st.info("No pullback setups found")
+
+
+with tab5:
+    st.subheader("💨 Momentum Continuation Setups")
+    st.caption("Stocks with strong momentum continuing their trend")
+
+    momentum_setups = [
+        s for r in results for s in r.setups
+        if s.setup_type == SwingSetupType.MOMENTUM_CONTINUATION
+    ]
+
+    if momentum_setups:
+        momentum_setups.sort(key=lambda x: x.confidence_score, reverse=True)
+
+        for setup in momentum_setups[:10]:
+            tech = setup.technical_summary or {}
+
+            with st.expander(f"💨 {setup.ticker} - Momentum Continuation"):
+                cols = st.columns(5)
+                cols[0].metric("Price", f"₹{setup.current_price:.2f}")
+                cols[1].metric("RSI", f"{tech.get('rsi', 'N/A')}")
+                cols[2].metric("MACD", f"{tech.get('macd', 'N/A')}")
+                cols[3].metric("R:R", f"{setup.risk_reward:.1f}")
+                cols[4].metric("Confidence", f"{setup.confidence_score}/10")
+
+                # ADX and Divergence info
+                adx_val = tech.get("adx")
+                divergence_val = tech.get("divergence")
+                if adx_val is not None or divergence_val is not None:
+                    adx_cols = st.columns(2)
+                    if adx_val is not None:
+                        adx_label = "Strong" if adx_val >= 25 else "Weak"
+                        adx_cols[0].metric("ADX (Trend Strength)", f"{adx_val:.1f} ({adx_label})")
+                    if divergence_val is not None:
+                        div_str = tech.get("divergence_strength", "")
+                        adx_cols[1].metric("Divergence", f"{divergence_val} ({div_str})" if div_str else divergence_val)
+
+                st.markdown("**Signals:**")
+                for signal in setup.signals:
+                    st.markdown(f"✅ {signal}")
+
+                st.markdown(f"""
+                **Trade Plan:**
+                - Entry: ₹{setup.entry_zone[0]:.2f} - ₹{setup.entry_zone[1]:.2f}
+                - Stop: ₹{setup.stop_loss:.2f}
+                - T1: ₹{setup.target_1:.2f} | T2: ₹{setup.target_2:.2f}
+                """)
+
+    else:
+        st.info("No momentum continuation setups found")
+
+
+with tab6:
+    st.subheader("🔄 Mean Reversion Setups")
+    st.caption("Stocks deviating significantly from their mean, likely to revert")
+
+    mean_rev_setups = [
+        s for r in results for s in r.setups
+        if s.setup_type == SwingSetupType.MEAN_REVERSION
+    ]
+
+    if mean_rev_setups:
+        mean_rev_setups.sort(key=lambda x: x.confidence_score, reverse=True)
+
+        for setup in mean_rev_setups[:10]:
+            tech = setup.technical_summary or {}
+
+            with st.expander(f"🔄 {setup.ticker} - Mean Reversion Setup"):
+                cols = st.columns(5)
+                cols[0].metric("Price", f"₹{setup.current_price:.2f}")
+                cols[1].metric("RSI", f"{tech.get('rsi', 'N/A')}")
+                cols[2].metric("EMA 20", f"₹{tech.get('ema20', 0):.2f}" if tech.get("ema20") else "N/A")
+                cols[3].metric("R:R", f"{setup.risk_reward:.1f}")
+                cols[4].metric("Confidence", f"{setup.confidence_score}/10")
+
+                # ADX and Divergence info
+                adx_val = tech.get("adx")
+                divergence_val = tech.get("divergence")
+                if adx_val is not None or divergence_val is not None:
+                    adx_cols = st.columns(2)
+                    if adx_val is not None:
+                        adx_label = "Strong" if adx_val >= 25 else "Weak"
+                        adx_cols[0].metric("ADX (Trend Strength)", f"{adx_val:.1f} ({adx_label})")
+                    if divergence_val is not None:
+                        div_str = tech.get("divergence_strength", "")
+                        adx_cols[1].metric("Divergence", f"{divergence_val} ({div_str})" if div_str else divergence_val)
+
+                st.markdown("**Signals:**")
+                for signal in setup.signals:
+                    st.markdown(f"✅ {signal}")
+
+                st.markdown(f"""
+                **Trade Plan:**
+                - Entry: ₹{setup.entry_zone[0]:.2f} - ₹{setup.entry_zone[1]:.2f}
+                - Stop: ₹{setup.stop_loss:.2f}
+                - T1: ₹{setup.target_1:.2f} | T2: ₹{setup.target_2:.2f}
+                """)
+
+    else:
+        st.info("No mean reversion setups found")
+
+
+with tab7:
+    st.subheader("⚠️ Breakdown Warning Signals")
+    st.caption("Stocks showing signs of breakdown - these are WARNING signals, not buy setups")
+
+    breakdown_setups = [
+        s for r in results for s in r.setups
+        if s.setup_type == SwingSetupType.BREAKDOWN
+    ]
+
+    if breakdown_setups:
+        st.error(f"Found {len(breakdown_setups)} breakdown warning(s). These stocks may be at risk of further decline.")
+        breakdown_setups.sort(key=lambda x: x.confidence_score, reverse=True)
+
+        # Summary table
+        table_data = []
+        for s in breakdown_setups[:15]:
+            tech = s.technical_summary or {}
+            table_data.append({
+                "Stock": s.ticker,
+                "Sector": s.sector,
+                "Price": f"₹{s.current_price:.2f}",
+                "RSI": tech.get("rsi", "N/A"),
+                "ADX": f"{tech['adx']:.1f}" if tech.get("adx") is not None else "N/A",
+                "Divergence": tech.get("divergence", "N/A"),
+                "Support": f"₹{s.stop_loss:.2f}",
+                "Confidence": f"{s.confidence_score}/10"
+            })
+
+        st.dataframe(pd.DataFrame(table_data), hide_index=True, use_container_width=True)
+
+        # Detail expanders
+        for setup in breakdown_setups[:10]:
+            tech = setup.technical_summary or {}
+
+            with st.expander(f"⚠️ {setup.ticker} - BREAKDOWN WARNING"):
+                st.warning("This is a breakdown warning signal. Consider reducing exposure or setting tight stops.")
+
+                cols = st.columns(4)
+                cols[0].metric("Price", f"₹{setup.current_price:.2f}")
+                cols[1].metric("Support Level", f"₹{setup.stop_loss:.2f}")
+                cols[2].metric("RSI", f"{tech.get('rsi', 'N/A')}")
+                cols[3].metric("Warning Confidence", f"{setup.confidence_score}/10")
+
+                # ADX and Divergence info
+                adx_val = tech.get("adx")
+                divergence_val = tech.get("divergence")
+                if adx_val is not None or divergence_val is not None:
+                    adx_cols = st.columns(2)
+                    if adx_val is not None:
+                        adx_label = "Strong" if adx_val >= 25 else "Weak"
+                        adx_cols[0].metric("ADX (Trend Strength)", f"{adx_val:.1f} ({adx_label})")
+                    if divergence_val is not None:
+                        div_str = tech.get("divergence_strength", "")
+                        adx_cols[1].metric("Divergence", f"{divergence_val} ({div_str})" if div_str else divergence_val)
+
+                st.markdown("**Bearish Signals:**")
+                for signal in setup.signals:
+                    st.markdown(f"🔴 {signal}")
+
+    else:
+        st.success("No breakdown warnings found - all clear!")
 
 
 # Stock details section

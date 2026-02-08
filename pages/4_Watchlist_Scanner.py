@@ -58,7 +58,7 @@ def run_scan(watchlist_name: str, strategy_name: str, min_matches: int):
 
 def display_screener_result(result, index: int):
     """Display a single screener result."""
-    stars = "" * min(result.score, 5)
+    stars = "" * min(result.score // 20, 5)
     bias_class = "metric-up" if result.technical_bias == "bullish" else "metric-down" if result.technical_bias == "bearish" else ""
 
     with st.expander(f"{index}. {result.ticker} {stars} - {result.technical_bias.title()}", expanded=index <= 3):
@@ -74,7 +74,7 @@ def display_screener_result(result, index: int):
 
         with col3:
             st.metric("Volume", result.volume_signal)
-            st.metric("Matches", f"{result.score} criteria")
+            st.metric("Score", f"{result.score}/100")
 
         st.markdown("**Matched Criteria:**")
         for criteria in result.matched_criteria:
@@ -178,7 +178,7 @@ def main():
                     avg_rsi = sum(r.rsi for r in results if r.rsi) / len([r for r in results if r.rsi])
                     st.metric("Avg RSI", f"{avg_rsi:.1f}")
                 with col4:
-                    high_score = sum(1 for r in results if r.score >= 3)
+                    high_score = sum(1 for r in results if r.score >= 70)
                     st.metric("Strong Signals", high_score)
 
                 st.markdown("---")
