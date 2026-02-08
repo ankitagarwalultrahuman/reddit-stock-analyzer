@@ -82,7 +82,7 @@ st.sidebar.caption(f"• Breakouts: {len(report.breakout_candidates)}")
 _all_stocks_for_sidebar = (report.top_gainers + report.top_losers + report.rs_leaders
                            + report.oversold_stocks + report.overbought_stocks
                            + report.breakout_candidates)
-_breakdown_count = len(set(s.ticker for s in _all_stocks_for_sidebar if s.breakdown_candidate))
+_breakdown_count = len(set(s.ticker for s in _all_stocks_for_sidebar if getattr(s, 'breakdown_candidate', False)))
 st.sidebar.caption(f"• Breakdowns: {_breakdown_count}")
 st.sidebar.caption(f"• Oversold: {len(report.oversold_stocks)}")
 
@@ -219,7 +219,7 @@ with tab2:
                 "1W": f"{stock.week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
+                "Trend": f"{stock.weekly_trend.capitalize()} ({getattr(stock, 'trend_strength', 'moderate').capitalize()})",
                 "RSI": stock.rsi,
                 "RS": f"{stock.relative_strength:+.1f}%"
             })
@@ -322,7 +322,7 @@ with tab4:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
+                "Trend": f"{stock.weekly_trend.capitalize()} ({getattr(stock, 'trend_strength', 'moderate').capitalize()})",
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%",
                 "Volume": f"{stock.volume_ratio:.1f}x",
@@ -373,7 +373,7 @@ with tab4:
     seen_breakdown = set()
     breakdown_candidates = []
     for s in all_analyzed_stocks:
-        if s.breakdown_candidate and s.ticker not in seen_breakdown:
+        if getattr(s, 'breakdown_candidate', False) and s.ticker not in seen_breakdown:
             seen_breakdown.add(s.ticker)
             breakdown_candidates.append(s)
     breakdown_candidates = sorted(breakdown_candidates, key=lambda x: x.week_change_pct)[:10]
@@ -389,7 +389,7 @@ with tab4:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
+                "Trend": f"{stock.weekly_trend.capitalize()} ({getattr(stock, 'trend_strength', 'moderate').capitalize()})",
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%",
                 "Volume": f"{stock.volume_ratio:.1f}x",
@@ -444,7 +444,7 @@ with tab5:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
+                "Trend": f"{stock.weekly_trend.capitalize()} ({getattr(stock, 'trend_strength', 'moderate').capitalize()})",
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%",
                 "Support": f"₹{stock.support_level:.0f}" if stock.support_level else "N/A",
@@ -483,7 +483,7 @@ with tab5:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
+                "Trend": f"{stock.weekly_trend.capitalize()} ({getattr(stock, 'trend_strength', 'moderate').capitalize()})",
                 "RSI": f"{stock.rsi:.0f}",
                 "RS": f"{stock.relative_strength:+.1f}%"
             })
@@ -524,7 +524,7 @@ with tab6:
                 "2W": f"{stock.two_week_change_pct:+.1f}%",
                 "4W": f"{stock.four_week_change_pct:+.1f}%",
                 "6W": f"{stock.month_change_pct:+.1f}%",
-                "Trend": f"{stock.weekly_trend.capitalize()} ({stock.trend_strength.capitalize()})",
+                "Trend": f"{stock.weekly_trend.capitalize()} ({getattr(stock, 'trend_strength', 'moderate').capitalize()})",
                 "RS vs NIFTY": f"{stock.relative_strength:+.1f}%",
                 "RSI": f"{stock.rsi:.0f}",
                 "Bias": stock.technical_bias
