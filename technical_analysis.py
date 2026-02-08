@@ -260,18 +260,40 @@ def calculate_volume_analysis(df: pd.DataFrame, period: int = 20) -> tuple:
     return avg_volume, volume_ratio
 
 
-def calculate_52_week_high_low(df: pd.DataFrame) -> tuple:
+def calculate_52_week_high_low(df: pd.DataFrame, ticker: str = None) -> tuple:
     """
     Calculate 52-week high and low.
 
+    If the provided DataFrame has less than 200 trading days and a ticker is given,
+    fetches 1-year historical data directly from yfinance to get accurate 52-week values.
+
     Args:
-        df: DataFrame with 'High' and 'Low' columns (should have ~252 trading days)
+        df: DataFrame with 'High' and 'Low' columns
+        ticker: Stock ticker symbol (used to fetch full 1-year data if df is too short)
 
     Returns:
         Tuple of (52_week_high, 52_week_low)
     """
     if df is None or df.empty:
         return None, None
+
+    # If we don't have enough data for a proper 52-week calculation, fetch it
+    if len(df) < 200 and ticker:
+        try:
+            import yfinance as yf
+            from stock_history import get_nse_symbol
+            from datetime import datetime, timedelta
+
+            yf_symbol = get_nse_symbol(ticker)
+            stock = yf.Ticker(yf_symbol)
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=375)  # ~1 year + buffer for weekends/holidays
+
+            yearly_df = stock.history(start=start_date, end=end_date)
+            if yearly_df is not None and not yearly_df.empty and len(yearly_df) > len(df):
+                df = yearly_df
+        except Exception:
+            pass  # Fall back to whatever data we have
 
     # Use last 252 trading days (approximately 52 weeks)
     period = min(252, len(df))
@@ -512,8 +534,8 @@ def get_technical_analysis(df: pd.DataFrame, ticker: str) -> TechnicalSignals:
     volume_avg, volume_ratio = calculate_volume_analysis(df)
     current_volume = int(df['Volume'].iloc[-1]) if 'Volume' in df.columns else None
 
-    # Calculate 52-week high/low
-    week_52_high, week_52_low = calculate_52_week_high_low(df)
+    # Calculate 52-week high/low (pass ticker to fetch full year data if needed)
+    week_52_high, week_52_low = calculate_52_week_high_low(df, ticker)
     pct_from_52w_high = None
     pct_from_52w_low = None
     near_52w_high = False
