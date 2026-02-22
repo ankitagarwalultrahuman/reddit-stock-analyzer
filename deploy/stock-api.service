@@ -1,0 +1,15 @@
+[Unit]
+Description=Stock Analyzer FastAPI
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/reddit-stock-analyzer
+Environment="PATH=/opt/reddit-stock-analyzer/venv/bin"
+Environment="PYTHONPATH=/opt/reddit-stock-analyzer"
+ExecStart=/opt/reddit-stock-analyzer/venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

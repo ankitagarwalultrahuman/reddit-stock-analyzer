@@ -24,10 +24,6 @@ def get_secret(key: str, default: str = None) -> Optional[str]:
     return os.getenv(key, default)
 
 
-# Claude API Configuration
-ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY")
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
-
 # Reddit Configuration
 SUBREDDITS = [
     "IndianStreetBets",
