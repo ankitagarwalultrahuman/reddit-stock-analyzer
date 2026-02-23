@@ -33,3 +33,7 @@ Thumbs.db
 
 # Cache files
 stock_cache.db
+signals.db
+
+# Backup files
+*.bak
