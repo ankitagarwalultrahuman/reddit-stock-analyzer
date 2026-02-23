@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -71,6 +71,11 @@ export const api = {
   startSectorAnalysis: () =>
     fetchAPI<{ task_id: string }>("/api/sectors/analyze", { method: "POST" }),
   getSectorResult: (taskId: string) => fetchAPI<TaskResult>(`/api/sectors/analyze/${taskId}`),
+
+  // ETF (async)
+  startETFAnalysis: () =>
+    fetchAPI<{ task_id: string }>("/api/etf/analyze", { method: "POST" }),
+  getETFResult: (taskId: string) => fetchAPI<TaskResult>(`/api/etf/analyze/${taskId}`),
 
   // Weekly (async)
   startWeeklyPulse: (watchlist = "NIFTY50") =>

@@ -23,6 +23,7 @@ from backend.app.routers import (
     news,
     alerts,
     weekly,
+    etf,
 )
 
 
@@ -61,6 +62,7 @@ app.include_router(signals.router, prefix="/api/signals", tags=["signals"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(weekly.router, prefix="/api/weekly", tags=["weekly"])
+app.include_router(etf.router, prefix="/api/etf", tags=["etf"])
 
 
 @app.get("/api/health")
