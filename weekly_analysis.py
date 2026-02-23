@@ -446,10 +446,10 @@ def generate_weekly_pulse(
 
     rs_leaders = sorted(stock_metrics, key=lambda x: x.relative_strength, reverse=True)[:10]
 
-    # Calculate market breadth
-    advances = len([s for s in stock_metrics if s.week_change_pct > 0])
-    declines = len([s for s in stock_metrics if s.week_change_pct < 0])
+    # Calculate market breadth (mutually exclusive categories)
     unchanged = len([s for s in stock_metrics if abs(s.week_change_pct) < 0.01])
+    advances = len([s for s in stock_metrics if s.week_change_pct >= 0.01])
+    declines = len([s for s in stock_metrics if s.week_change_pct <= -0.01])
 
     # Get FII/DII data
     fii_dii = get_fii_dii_data()

@@ -1,5 +1,6 @@
 """Stocks router - wraps stock_history.py for price data and technicals."""
 
+import pandas as pd
 from fastapi import APIRouter, Query
 
 from stock_history import (
@@ -16,8 +17,13 @@ def _df_to_records(df):
     if df is None or df.empty:
         return []
     df = df.copy()
-    df.index = df.index.strftime("%Y-%m-%d")
-    return df.reset_index().to_dict(orient="records")
+    # Handle both DatetimeIndex and RangeIndex (Date as column)
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date']).dt.strftime("%Y-%m-%d")
+        return df.to_dict(orient="records")
+    else:
+        df.index = df.index.strftime("%Y-%m-%d")
+        return df.reset_index().to_dict(orient="records")
 
 
 # NOTE: /multiple must be defined BEFORE /{ticker} to avoid path capture

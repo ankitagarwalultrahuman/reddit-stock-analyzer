@@ -238,7 +238,8 @@ def detect_oversold_bounce_setup(
     rsi: float,
     macd_signal: str,
     supports: list[float],
-    volume_ratio: float
+    volume_ratio: float,
+    atr_value: float = 0
 ) -> Optional[SwingSetup]:
     """
     Detect oversold bounce setup.
@@ -266,7 +267,9 @@ def detect_oversold_bounce_setup(
                 break
 
     if not near_support and supports:
-        closest_support = supports[0]
+        # Pick nearest support below current price
+        below_supports = [s for s in supports if s < current_price]
+        closest_support = max(below_supports) if below_supports else supports[-1]
 
     # MACD confirmation
     if macd_signal in ["bullish_crossover", "bullish"]:
@@ -276,10 +279,11 @@ def detect_oversold_bounce_setup(
     if volume_ratio > 1.5:
         signals.append(f"Volume spike {volume_ratio:.1f}x")
 
-    # Calculate targets and stop
-    stop_loss = closest_support * 0.97 if closest_support else current_price * 0.95
-    target_1 = current_price * 1.05  # 5% target
-    target_2 = current_price * 1.10  # 10% target
+    # ATR-based stop and targets
+    atr = atr_value or current_price * 0.02  # fallback 2%
+    stop_loss = (closest_support - 1.5 * atr) if closest_support else (current_price - 2 * atr)
+    target_1 = current_price + 2.0 * atr
+    target_2 = current_price + 3.5 * atr
 
     risk = current_price - stop_loss
     reward = target_1 - current_price
@@ -288,12 +292,16 @@ def detect_oversold_bounce_setup(
     # Confidence based on signal count
     confidence = min(len(signals) * 2 + (3 if near_support else 0), 10)
 
+    # ATR-based entry zone
+    entry_low = current_price - 0.5 * atr
+    entry_high = current_price + 0.5 * atr
+
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.OVERSOLD_BOUNCE,
         current_price=current_price,
-        entry_zone=(current_price * 0.99, current_price * 1.01),
+        entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
@@ -310,7 +318,8 @@ def detect_pullback_to_ema_setup(
     current_price: float,
     df: pd.DataFrame,
     tech_signals: dict,
-    ma_trend: str
+    ma_trend: str,
+    atr_value: float = 0
 ) -> Optional[SwingSetup]:
     """
     Detect pullback to moving average setup.
@@ -350,10 +359,11 @@ def detect_pullback_to_ema_setup(
     if rsi < 65:
         signals.append(f"RSI healthy at {rsi:.1f}")
 
-    # Stop below the EMA
-    stop_loss = min(ema20, ema50) * 0.98 if ema20 and ema50 else current_price * 0.95
-    target_1 = current_price * 1.06
-    target_2 = current_price * 1.12
+    # ATR-based stop and targets
+    atr = atr_value or current_price * 0.02
+    stop_loss = min(ema20, ema50) - 1.5 * atr if ema20 and ema50 else current_price - 2 * atr
+    target_1 = current_price + 2.0 * atr
+    target_2 = current_price + 3.5 * atr
 
     risk = current_price - stop_loss
     reward = target_1 - current_price
@@ -361,12 +371,17 @@ def detect_pullback_to_ema_setup(
 
     confidence = min(len(signals) * 2 + 2, 10)
 
+    # Entry zone anchored near EMA
+    anchor = ema20 if near_ema20 else ema50
+    entry_low = anchor - 0.3 * atr
+    entry_high = anchor + 0.5 * atr
+
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.PULLBACK_TO_EMA,
         current_price=current_price,
-        entry_zone=(current_price * 0.99, current_price * 1.01),
+        entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
@@ -384,7 +399,8 @@ def detect_breakout_setup(
     resistances: list[float],
     volume_ratio: float,
     macd_signal: str,
-    rsi: float
+    rsi: float,
+    atr_value: float = 0
 ) -> Optional[SwingSetup]:
     """
     Detect breakout setup.
@@ -428,10 +444,11 @@ def detect_breakout_setup(
     if rsi < 70:
         signals.append(f"RSI room to run at {rsi:.1f}")
 
-    # Targets
-    stop_loss = breaking_resistance * 0.97
-    target_1 = current_price * 1.08
-    target_2 = current_price * 1.15
+    # ATR-based targets (breakouts tend to move more)
+    atr = atr_value or current_price * 0.02
+    stop_loss = breaking_resistance - 1.0 * atr  # Resistance becomes support
+    target_1 = current_price + 2.5 * atr
+    target_2 = current_price + 4.0 * atr
 
     risk = current_price - stop_loss
     reward = target_1 - current_price
@@ -439,12 +456,16 @@ def detect_breakout_setup(
 
     confidence = min(len(signals) * 2 + 2, 10)
 
+    # Entry zone near breakout level
+    entry_low = breaking_resistance - 0.2 * atr
+    entry_high = breaking_resistance + 0.8 * atr
+
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.BREAKOUT,
         current_price=current_price,
-        entry_zone=(current_price * 0.99, current_price * 1.02),
+        entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
@@ -463,7 +484,8 @@ def detect_momentum_continuation_setup(
     supports: list[float],
     volume_ratio: float,
     rs: float,
-    fib_levels: dict
+    fib_levels: dict,
+    atr_value: float = 0
 ) -> Optional[SwingSetup]:
     """
     Detect momentum continuation setup.
@@ -498,18 +520,19 @@ def detect_momentum_continuation_setup(
     if volume_ratio > 1.2:
         signals.append(f"Volume confirmation {volume_ratio:.1f}x")
 
-    # Targets using Fibonacci extension if available
+    # ATR-based stop and targets
+    atr = atr_value or current_price * 0.02
     ema20 = tech.ema_20 or current_price * 0.98
-    stop_loss = ema20 * 0.97
+    stop_loss = ema20 - 1.5 * atr
 
-    # Use Fibonacci for targets if available
+    # Use Fibonacci for targets if available, otherwise ATR-based
     swing_high = fib_levels.get("swing_high", 0)
     if swing_high and swing_high > current_price:
         target_1 = swing_high
         target_2 = current_price + (swing_high - current_price) * 1.618
     else:
-        target_1 = current_price * 1.06
-        target_2 = current_price * 1.12
+        target_1 = current_price + 2.0 * atr
+        target_2 = current_price + 3.5 * atr
 
     risk = current_price - stop_loss
     reward = target_1 - current_price
@@ -522,12 +545,16 @@ def detect_momentum_continuation_setup(
         "Outperforming": 1.5, "Volume": 2,
     })
 
+    # ATR-based entry zone
+    entry_low = current_price - 0.3 * atr
+    entry_high = current_price + 0.5 * atr
+
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.MOMENTUM_CONTINUATION,
         current_price=current_price,
-        entry_zone=(current_price * 0.99, current_price * 1.01),
+        entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
@@ -545,7 +572,8 @@ def detect_mean_reversion_setup(
     tech,
     supports: list[float],
     volume_ratio: float,
-    rs: float
+    rs: float,
+    atr_value: float = 0
 ) -> Optional[SwingSetup]:
     """
     Detect mean reversion setup.
@@ -586,13 +614,17 @@ def detect_mean_reversion_setup(
     if volume_ratio > 1.2:
         signals.append(f"Volume spike {volume_ratio:.1f}x")
 
+    # ATR-based stop and targets
+    atr = atr_value or current_price * 0.02
+
+    # Nearest support below price (not furthest)
+    below_supports = [s for s in supports if s < current_price]
+    closest_support = max(below_supports) if below_supports else (supports[-1] if supports else current_price * 0.95)
+    stop_loss = closest_support - 1.5 * atr
+
     # Targets: revert to moving averages
     ema20 = tech.ema_20 or current_price * 1.03
     ema50 = tech.ema_50 or current_price * 1.06
-
-    closest_support = supports[0] if supports else current_price * 0.95
-    stop_loss = closest_support * 0.97
-
     target_1 = ema20
     target_2 = ema50
 
@@ -605,12 +637,16 @@ def detect_mean_reversion_setup(
         "MACD": 2, "Volume": 1.5,
     })
 
+    # ATR-based entry zone
+    entry_low = current_price - 0.5 * atr
+    entry_high = current_price + 0.5 * atr
+
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.MEAN_REVERSION,
         current_price=current_price,
-        entry_zone=(current_price * 0.99, current_price * 1.01),
+        entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
@@ -628,7 +664,8 @@ def detect_breakdown_setup(
     tech,
     supports: list[float],
     volume_ratio: float,
-    rs: float
+    rs: float,
+    atr_value: float = 0
 ) -> Optional[SwingSetup]:
     """
     Detect breakdown warning (price breaking support).
@@ -675,10 +712,11 @@ def detect_breakdown_setup(
     if rsi > 30:
         signals.append(f"RSI at {rsi:.1f} (room to fall)")
 
-    # For breakdown, stop is ABOVE support (exit if wrong)
-    stop_loss = breaking_support * 1.03
-    target_1 = breaking_support * 0.92
-    target_2 = breaking_support * 0.85
+    # ATR-based stop and targets (short/warning setup — stop above, targets below)
+    atr = atr_value or current_price * 0.02
+    stop_loss = breaking_support + 1.0 * atr
+    target_1 = current_price - 2.0 * atr
+    target_2 = current_price - 3.5 * atr
 
     risk = stop_loss - current_price
     reward = current_price - target_1
@@ -688,12 +726,16 @@ def detect_breakdown_setup(
         "Breaking support": 3, "Volume": 2, "MACD": 2, "RSI": 1,
     })
 
+    # ATR-based entry zone
+    entry_low = current_price - 0.5 * atr
+    entry_high = current_price + 0.3 * atr
+
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.BREAKDOWN,
         current_price=current_price,
-        entry_zone=(current_price * 0.99, current_price * 1.01),
+        entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
@@ -701,6 +743,102 @@ def detect_breakdown_setup(
         confidence_score=confidence,
         signals=signals,
         technical_summary={"support": breaking_support, "volume": volume_ratio, "rsi": rsi},
+        relative_strength=rs
+    )
+
+
+def detect_52w_high_breakout_setup(
+    ticker: str,
+    current_price: float,
+    tech,
+    volume_ratio: float,
+    rs: float,
+    atr_value: float = 0
+) -> Optional[SwingSetup]:
+    """
+    Detect 52-week high breakout setup.
+
+    Criteria:
+    - Price within 3% of 52-week high (or breaking above)
+    - Volume confirmation (> 1.2x average)
+    - RSI 55-80 (momentum but not extreme)
+    - MA trend bullish or at least not bearish
+    """
+    if not tech:
+        return None
+
+    week_52_high = tech.week_52_high or 0
+    if not week_52_high or week_52_high <= 0:
+        return None
+
+    pct_from_high = ((current_price - week_52_high) / week_52_high) * 100
+    # Must be within 3% below or breaking above
+    if pct_from_high < -3:
+        return None
+
+    rsi = tech.rsi or 50
+    if rsi < 55 or rsi > 80:
+        return None
+
+    if tech.ma_trend == "bearish":
+        return None
+
+    signals = []
+
+    if pct_from_high >= 0:
+        signals.append(f"New 52-week high at ₹{current_price:.2f}")
+    else:
+        signals.append(f"Within {abs(pct_from_high):.1f}% of 52W high (₹{week_52_high:.2f})")
+
+    if volume_ratio >= 1.2:
+        signals.append(f"Volume confirmation {volume_ratio:.1f}x")
+    else:
+        return None  # Volume required for 52W breakout
+
+    signals.append(f"RSI momentum at {rsi:.1f}")
+
+    if tech.ma_trend == "bullish":
+        signals.append("Bullish MA alignment")
+
+    if tech.adx and tech.adx >= ADX_STRONG_TREND:
+        signals.append(f"Strong trend (ADX: {tech.adx:.1f})")
+
+    if rs > 0:
+        signals.append(f"Outperforming NIFTY by {rs:.1f}%")
+
+    # ATR-based stop and targets (breakout momentum — wider targets)
+    atr = atr_value or current_price * 0.02
+    stop_loss = week_52_high - 1.5 * atr  # Stop below the 52W high level
+    target_1 = current_price + 3.0 * atr
+    target_2 = current_price + 5.0 * atr
+
+    risk = current_price - stop_loss
+    reward = target_1 - current_price
+    risk_reward = reward / risk if risk > 0 else 0
+
+    confidence = _calculate_weighted_confidence(signals, {
+        "52-week high": 3, "52W high": 3, "Volume": 2,
+        "RSI": 1.5, "Bullish MA": 1.5, "Strong trend": 2,
+        "Outperforming": 1.5,
+    })
+
+    # Entry zone near the 52W high level
+    entry_low = week_52_high - 0.3 * atr
+    entry_high = week_52_high + 1.0 * atr
+
+    return SwingSetup(
+        ticker=ticker,
+        sector=get_sector_for_stock(ticker) or "Unknown",
+        setup_type=SwingSetupType.BREAKOUT,  # Subtype of breakout
+        current_price=current_price,
+        entry_zone=(round(entry_low, 2), round(entry_high, 2)),
+        stop_loss=round(stop_loss, 2),
+        target_1=round(target_1, 2),
+        target_2=round(target_2, 2),
+        risk_reward=round(risk_reward, 2),
+        confidence_score=confidence,
+        signals=signals,
+        technical_summary={"week_52_high": week_52_high, "pct_from_high": round(pct_from_high, 2), "volume": volume_ratio},
         relative_strength=rs
     )
 
@@ -726,8 +864,8 @@ def _calculate_weighted_confidence(signals: list[str], weight_map: dict) -> int:
 def screen_stock(ticker: str) -> Optional[ScreenerResult]:
     """Screen a single stock for swing setups."""
     try:
-        # Get historical data
-        df = fetch_stock_history(ticker, days=60, force_refresh=True)
+        # Get historical data (250 days for reliable EMA-200, Fibonacci, etc.)
+        df = fetch_stock_history(ticker, days=250, force_refresh=True)
         if df.empty or len(df) < 20:
             return None
 
@@ -784,12 +922,15 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
         # Calculate Fibonacci levels
         fib_levels = calculate_fibonacci_levels(df)
 
+        # ATR value for all setup calculations
+        atr = tech.atr or current_price * 0.02
+
         # Detect setups
         setups = []
 
         # 1. Oversold bounce
         oversold = detect_oversold_bounce_setup(
-            ticker, current_price, rsi, macd_signal, supports, volume_ratio
+            ticker, current_price, rsi, macd_signal, supports, volume_ratio, atr_value=atr
         )
         if oversold:
             oversold.relative_strength = rs
@@ -797,7 +938,7 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
 
         # 2. Pullback to EMA
         pullback = detect_pullback_to_ema_setup(
-            ticker, current_price, df, tech_summary, ma_trend
+            ticker, current_price, df, tech_summary, ma_trend, atr_value=atr
         )
         if pullback:
             pullback.relative_strength = rs
@@ -805,7 +946,7 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
 
         # 3. Breakout
         breakout = detect_breakout_setup(
-            ticker, current_price, resistances, volume_ratio, macd_signal, rsi
+            ticker, current_price, resistances, volume_ratio, macd_signal, rsi, atr_value=atr
         )
         if breakout:
             breakout.relative_strength = rs
@@ -813,24 +954,34 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
 
         # 4. Momentum Continuation
         momentum = detect_momentum_continuation_setup(
-            ticker, current_price, tech, supports, volume_ratio, rs, fib_levels
+            ticker, current_price, tech, supports, volume_ratio, rs, fib_levels, atr_value=atr
         )
         if momentum:
             setups.append(momentum)
 
         # 5. Mean Reversion
         mean_rev = detect_mean_reversion_setup(
-            ticker, current_price, tech, supports, volume_ratio, rs
+            ticker, current_price, tech, supports, volume_ratio, rs, atr_value=atr
         )
         if mean_rev:
             setups.append(mean_rev)
 
         # 6. Breakdown Warning
         breakdown = detect_breakdown_setup(
-            ticker, current_price, tech, supports, volume_ratio, rs
+            ticker, current_price, tech, supports, volume_ratio, rs, atr_value=atr
         )
         if breakdown:
             setups.append(breakdown)
+
+        # 7. 52-Week High Breakout
+        w52_breakout = detect_52w_high_breakout_setup(
+            ticker, current_price, tech, volume_ratio, rs, atr_value=atr
+        )
+        if w52_breakout:
+            setups.append(w52_breakout)
+
+        # Filter out setups below minimum risk:reward ratio
+        setups = [s for s in setups if s.risk_reward >= SWING_RISK_REWARD_MIN]
 
         # Calculate total score (normalized to 0-100)
         total_score = technical_score  # Already 0-100

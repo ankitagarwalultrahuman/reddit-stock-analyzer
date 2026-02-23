@@ -52,9 +52,23 @@ SPECIAL_TICKER_MAPPINGS = {
     "M&MFIN": "M&MFIN.NS",
     "L&TFH": "L&TFH.NS",
 
-    # Tickers that need different symbols on yfinance
+    # Tickers renamed/merged on Yahoo Finance
     "NATCOPHARMA": "NATCOPHARM.NS",
-    # TATAMOTORS uses standard .NS suffix, no special mapping needed
+    "TATAMOTORS": "TTML.NS",
+    "MINDTREE": "LTIM.NS",         # Merged into LTI Mindtree
+    "ZOMATO": "ETERNAL.NS",        # Renamed to Eternal Ltd
+    "LTFH": "LTF.NS",              # L&T Finance Holdings
+    "AARTI": "AARTIIND.NS",        # Aarti Industries
+    "MINDA": "UNOMINDA.NS",        # UNO Minda
+    "FIEM": "FIEMIND.NS",          # Fiem Industries
+    "BATA": "BATAINDIA.NS",        # Bata India
+    "UJJIVAN": "UJJIVANSFB.NS",    # Ujjivan Small Finance Bank
+    "JAMNAUTO": "JAMNAAUTO.NS",    # Jamna Auto Industries
+    "RAMKRISHNA": "RKFORGE.NS",    # Ramkrishna Forgings
+    "JUBILANTFOOD": "JUBLFOOD.NS", # Jubilant FoodWorks
+    "SHRIRAMCIT": "SHRIRAMFIN.NS", # Shriram Finance (merged)
+    "WELSPUNIND": "WELSPUNLIV.NS", # Welspun Living
+    "SIYARAM": "SIYSIL.NS",        # Siyaram Silk Mills
     "MAZAGON": "MAZDOCK.NS",
     "KNR": "KNRCON.NS",
     "COCHINSHIP": "COCHINSHIP.NS",

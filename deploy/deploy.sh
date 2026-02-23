@@ -10,7 +10,16 @@ WEB_DIR="/var/www/brodus.tech/out"
 
 echo "=== Building frontend ==="
 cd frontend
+# Temporarily hide .env.local so production env vars are used during build
+if [ -f .env.local ]; then
+    mv .env.local .env.local.bak
+    trap 'cd frontend 2>/dev/null; mv .env.local.bak .env.local 2>/dev/null' EXIT
+fi
 npm run build
+# Restore .env.local
+if [ -f .env.local.bak ]; then
+    mv .env.local.bak .env.local
+fi
 cd ..
 
 echo "=== Syncing Python backend ==="

@@ -97,7 +97,7 @@ def _get_return_for_period(df: pd.DataFrame, calendar_days: int) -> float:
     This handles trading holidays and weekends correctly.
 
     Args:
-        df: DataFrame with DatetimeIndex and 'Close' column
+        df: DataFrame with 'Date' and 'Close' columns (Date can be column or index)
         calendar_days: Number of calendar days to look back
 
     Returns:
@@ -110,14 +110,22 @@ def _get_return_for_period(df: pd.DataFrame, calendar_days: int) -> float:
     if current == 0:
         return 0.0
 
-    target_date = df.index[-1] - timedelta(days=calendar_days)
+    # Use 'Date' column if available, otherwise fall back to index
+    if 'Date' in df.columns:
+        dates = pd.to_datetime(df['Date'])
+        last_date = dates.iloc[-1]
+        target_date = last_date - timedelta(days=calendar_days)
+        mask = dates <= target_date
+        if not mask.any():
+            return 0.0
+        past_price = float(df.loc[mask, 'Close'].iloc[-1])
+    else:
+        target_date = df.index[-1] - timedelta(days=calendar_days)
+        mask = df.index <= target_date
+        if not mask.any():
+            return 0.0
+        past_price = float(df.loc[mask, 'Close'].iloc[-1])
 
-    # Find nearest trading day at or before target_date
-    mask = df.index <= target_date
-    if not mask.any():
-        return 0.0
-
-    past_price = float(df.loc[mask, 'Close'].iloc[-1])
     if past_price == 0:
         return 0.0
 
@@ -127,8 +135,8 @@ def _get_return_for_period(df: pd.DataFrame, calendar_days: int) -> float:
 def analyze_stock_for_sector(ticker: str, debug: bool = False) -> Optional[StockPerformance]:
     """Analyze a single stock for sector analysis with monthly timeframes."""
     try:
-        # Fetch 150 days for 6-month analysis
-        df = fetch_stock_history(ticker, days=150)
+        # Fetch 250 days for 6-month analysis (need 200+ calendar days for 6M return)
+        df = fetch_stock_history(ticker, days=250)
 
         if debug:
             print(f"[DEBUG] {ticker}: df.empty={df.empty}, len={len(df)}, cols={df.columns.tolist() if not df.empty else 'N/A'}")
@@ -281,8 +289,8 @@ def analyze_sector(sector: str, max_workers: int = 5, use_parallel: bool = True)
         if (avg_1w > 0) != (avg_1m > 0):
             momentum_score -= 10  # 1W and 1M have opposite signs
     if avg_1w != 0 and avg_1m != 0 and avg_3m != 0:
-        if (avg_1w > 0) == (avg_1m > 0) == (avg_3m > 0):
-            momentum_score += 5  # All timeframes aligned
+        if avg_1w > 0 and avg_1m > 0 and avg_3m > 0:
+            momentum_score += 5  # All timeframes positively aligned
 
     momentum_score = max(0, min(100, momentum_score))
 

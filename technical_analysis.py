@@ -119,10 +119,10 @@ def calculate_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
         except Exception:
             pass  # Fall back to manual calculation
 
-    # Manual RSI calculation (fallback)
+    # Manual RSI calculation (fallback) using Wilder's exponential smoothing
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, min_periods=period).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, min_periods=period).mean()
 
     rs = gain / loss.replace(0, float('nan'))
     rsi = 100 - (100 / (1 + rs))
@@ -258,7 +258,7 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     low_close_prev = abs(df['Low'] - df['Close'].shift(1))
 
     tr = pd.concat([high_low, high_close_prev, low_close_prev], axis=1).max(axis=1)
-    atr = tr.rolling(window=period).mean()
+    atr = tr.ewm(alpha=1/period, min_periods=period).mean()  # Wilder's smoothing
 
     return atr
 
@@ -625,12 +625,17 @@ def calculate_technical_score(signals: TechnicalSignals) -> tuple:
     """
     Calculate overall technical score (0-100) and bias.
 
-    Scoring:
-    - RSI: +20 if oversold, -20 if overbought, +10 if near_oversold, -10 if near_overbought
-    - MACD: +25 for bullish_crossover, +15 for bullish, -25 for bearish_crossover, -15 for bearish
+    Scoring (rebalanced for swing trading):
+    - RSI: +15 if oversold (trend-context aware), -15 if overbought, +8/-8 for near levels
+    - MACD: +18 for bullish_crossover, +10 for bullish, -18/-10 for bearish
     - MA Trend: +15 for bullish, -15 for bearish
-    - Price vs EMA50: +10 if above, -10 if below
-    - Volume: +10 if high with bullish signals, -10 if high with bearish signals
+    - Price vs EMA50: +8 if above, -8 if below
+    - Volume: +8 if high confirming direction, -8 if confirming opposite
+    - ADX: ±8 for strong trend amplification, ±8 dampening for no trend
+    - Divergence: +12/-12
+    - BB Position: +5/-5
+    - Stochastic RSI: +8/-8
+    - 52-week proximity: +5 near low, -5 near high
 
     Base score starts at 50 (neutral).
 
@@ -639,25 +644,32 @@ def calculate_technical_score(signals: TechnicalSignals) -> tuple:
     """
     score = 50  # Start neutral
 
-    # RSI contribution
+    # RSI contribution (trend-context aware)
+    # RSI oversold in a bearish trend is NOT a buy signal — reduce bonus
     if signals.rsi_signal == "oversold":
-        score += 20
+        if signals.ma_trend == "bearish":
+            score += 5   # Oversold in downtrend — might keep falling
+        else:
+            score += 15  # Oversold in uptrend/mixed — good bounce candidate
     elif signals.rsi_signal == "overbought":
-        score -= 20
+        if signals.ma_trend == "bullish":
+            score -= 5   # Overbought in uptrend — momentum may continue
+        else:
+            score -= 15  # Overbought in downtrend/mixed — likely to drop
     elif signals.rsi_signal == "near_oversold":
-        score += 10
+        score += 8
     elif signals.rsi_signal == "near_overbought":
-        score -= 10
+        score -= 8
 
-    # MACD contribution
+    # MACD contribution (reduced from 25 to 18 to prevent single-indicator dominance)
     if signals.macd_trend == "bullish_crossover":
-        score += 25
+        score += 18
     elif signals.macd_trend == "bullish":
-        score += 15
+        score += 10
     elif signals.macd_trend == "bearish_crossover":
-        score -= 25
+        score -= 18
     elif signals.macd_trend == "bearish":
-        score -= 15
+        score -= 10
 
     # MA trend contribution
     if signals.ma_trend == "bullish":
@@ -667,57 +679,70 @@ def calculate_technical_score(signals: TechnicalSignals) -> tuple:
 
     # Price vs EMA50 contribution
     if signals.price_vs_ema50 == "above":
-        score += 10
+        score += 8
     elif signals.price_vs_ema50 == "below":
-        score -= 10
+        score -= 8
 
-    # Volume contribution (amplifies signals)
+    # Volume contribution (independent of current score direction)
     if signals.volume_signal == "high":
-        if score > 50:
-            score += 10  # Confirms bullish
-        elif score < 50:
-            score -= 10  # Confirms bearish
+        # High volume confirms the prevailing MA trend, not the intermediate score
+        if signals.ma_trend == "bullish":
+            score += 8
+        elif signals.ma_trend == "bearish":
+            score -= 8
+        else:
+            # In mixed trend, amplify whatever direction the score is leaning
+            if score > 52:
+                score += 5
+            elif score < 48:
+                score -= 5
 
-    # ADX contribution (trend strength amplifier)
+    # ADX contribution (stronger dampening for no-trend environments)
     if signals.adx is not None:
         if signals.adx > ADX_STRONG_TREND:
             # Strong trend - amplify existing directional score
             if score > 55:
-                score += 5
+                score += 8
             elif score < 45:
-                score -= 5
+                score -= 8
         elif signals.adx < ADX_WEAK_TREND:
-            # No clear trend - dampen directional score toward neutral
-            if score > 55:
-                score -= 5
-            elif score < 45:
-                score += 5
+            # No clear trend - dampen directional score toward neutral more aggressively
+            if score > 58:
+                score -= 8
+            elif score < 42:
+                score += 8
 
     # Divergence contribution
     if signals.divergence == "bullish":
-        score += 15
+        score += 12
     elif signals.divergence == "bearish":
-        score -= 15
+        score -= 12
 
     # Bollinger Band position contribution
     if signals.bb_position == "near_lower" or signals.bb_position == "below_lower":
-        score += 5  # Buying opportunity
+        score += 5
     elif signals.bb_position == "near_upper" or signals.bb_position == "above_upper":
-        score -= 5  # Overbought zone
+        score -= 5
 
     # Stochastic RSI contribution
     if signals.stoch_rsi_signal == "oversold" or signals.stoch_rsi_signal == "bullish_cross":
-        score += 10
+        score += 8
     elif signals.stoch_rsi_signal == "overbought" or signals.stoch_rsi_signal == "bearish_cross":
-        score -= 10
+        score -= 8
+
+    # 52-week proximity bonus
+    if signals.near_52w_low:
+        score += 5  # Potential value buy
+    elif signals.near_52w_high:
+        score -= 3  # Near highs, but breakout possible so smaller penalty
 
     # Clamp to 0-100
     score = max(0, min(100, score))
 
-    # Determine bias
-    if score >= 65:
+    # Determine bias (tighter neutral band for more actionable signals)
+    if score >= 60:
         bias = "bullish"
-    elif score <= 35:
+    elif score <= 40:
         bias = "bearish"
     else:
         bias = "neutral"

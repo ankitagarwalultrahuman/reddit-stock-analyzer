@@ -74,7 +74,7 @@ VOLUME_CHANGE_THRESHOLD = 20  # Percentage change threshold for volume changes
 
 # Technical Analysis Configuration
 TECHNICAL_ANALYSIS_ENABLED = True  # Enable/disable technical analysis features
-TECHNICAL_HISTORY_DAYS = 60  # Days of price history for indicator calculations
+TECHNICAL_HISTORY_DAYS = 250  # Days of price history for indicator calculations (needs 200+ for EMA-200)
 
 # RSI settings
 RSI_PERIOD = 14

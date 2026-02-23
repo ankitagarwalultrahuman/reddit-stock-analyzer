@@ -4,6 +4,25 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+import numpy as np
+
+
+def _sanitize_for_json(obj):
+    """Recursively convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, (np.integer,)):
+        return int(obj)
+    elif isinstance(obj, (np.floating,)):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
+
 
 class TaskStore:
     """In-memory task store for long-running background operations."""
@@ -24,7 +43,7 @@ class TaskStore:
     def complete(self, task_id: str, result: Any):
         if task_id in self._tasks:
             self._tasks[task_id]["status"] = "complete"
-            self._tasks[task_id]["result"] = result
+            self._tasks[task_id]["result"] = _sanitize_for_json(result)
 
     def fail(self, task_id: str, error: str):
         if task_id in self._tasks:

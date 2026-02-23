@@ -103,5 +103,5 @@ async def get_sentiment(report_date: date):
 async def get_comparison(report_date: date):
     comparison = load_comparison_for_date(report_date)
     if not comparison:
-        raise HTTPException(status_code=404, detail="No comparison available")
-    return comparison
+        return {"has_comparison": False, "content": None}
+    return {"has_comparison": True, **comparison} if isinstance(comparison, dict) else {"has_comparison": True, "content": comparison}
