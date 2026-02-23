@@ -89,7 +89,7 @@ export default function TechnicalPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <TechnicalChart data={chartData} height={450} />
+              <TechnicalChart data={chartData} height={350} showRSI showMACD />
             </CardContent>
           </Card>
 

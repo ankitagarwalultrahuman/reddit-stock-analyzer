@@ -36,13 +36,33 @@ def _serialize_report(report):
 
 def _run_weekly_pulse(task_id: str, req: WeeklyPulseRequest):
     try:
-        from weekly_analysis import generate_weekly_pulse, get_weekly_pulse_summary
+        from weekly_analysis import generate_weekly_pulse, get_weekly_pulse_summary, analyze_stock_weekly
         from watchlist_manager import get_stocks_from_watchlist
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         stocks = get_stocks_from_watchlist(req.watchlist)
         report = generate_weekly_pulse(stocks=stocks)
         summary = get_weekly_pulse_summary(report)
+
+        # Build all_stocks list from the full stock universe
+        all_stock_metrics = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(analyze_stock_weekly, t): t for t in stocks}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    all_stock_metrics.append(
+                        dataclasses.asdict(result) if dataclasses.is_dataclass(result) else result
+                    )
+
+        # Sort all stocks by total score proxy (week_change_pct)
+        all_stock_metrics.sort(key=lambda x: x.get("week_change_pct", 0), reverse=True)
+
+        serialized = _serialize_report(report)
+        serialized["all_stocks"] = all_stock_metrics
+
         task_store.complete(task_id, {
-            "report": _serialize_report(report),
+            "report": serialized,
             "summary": summary,
         })
     except Exception as e:

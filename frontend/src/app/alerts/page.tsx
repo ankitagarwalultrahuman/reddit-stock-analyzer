@@ -10,12 +10,20 @@ import { Spinner } from "@/components/ui/loading";
 import { useAsyncTask } from "@/lib/hooks/useScreener";
 import { useHoldings } from "@/lib/hooks/usePortfolio";
 import { api } from "@/lib/api";
-import { Bell, Send, MessageSquare, TrendingUp, TrendingDown } from "lucide-react";
+import { Bell, Send, MessageSquare, TrendingUp, TrendingDown, ChevronDown } from "lucide-react";
+
+const PRESET_WATCHLISTS: { label: string; tickers: string[] }[] = [
+  { label: "NIFTY50 Top 10", tickers: ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "LT"] },
+  { label: "Midcap Leaders", tickers: ["PERSISTENT", "COFORGE", "MPHASIS", "POLYCAB", "PIIND", "ASTRAL", "ATUL", "DEEPAKNTR"] },
+  { label: "Bank Pack", tickers: ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "INDUSINDBK", "BANKBARODA", "PNB"] },
+  { label: "IT Pack", tickers: ["TCS", "INFY", "WIPRO", "HCLTECH", "TECHM", "LTIM", "PERSISTENT", "COFORGE"] },
+];
 
 export default function AlertsPage() {
   const [threshold, setThreshold] = useState(1.0);
   const [tickerInput, setTickerInput] = useState("");
   const [tickers, setTickers] = useState<string[]>([]);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const { data: holdings } = useHoldings();
 
   const movementScan = useAsyncTask(
@@ -36,6 +44,10 @@ export default function AlertsPage() {
       const pts = holdings.map((h) => h.ticker);
       setTickers(Array.from(new Set([...tickers, ...pts])));
     }
+  };
+
+  const loadPreset = (preset: typeof PRESET_WATCHLISTS[number]) => {
+    setTickers(Array.from(new Set([...tickers, ...preset.tickers])));
   };
 
   return (
@@ -73,6 +85,23 @@ export default function AlertsPage() {
             </Button>
           </div>
 
+          {/* Preset Watchlists */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Quick Load Presets</label>
+            <div className="flex flex-wrap gap-2">
+              {PRESET_WATCHLISTS.map((p) => (
+                <Button
+                  key={p.label}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadPreset(p)}
+                >
+                  {p.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
           {tickers.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {tickers.map((t) => (
@@ -80,10 +109,13 @@ export default function AlertsPage() {
                   {t} x
                 </Badge>
               ))}
+              <Button variant="ghost" size="sm" className="text-xs" onClick={() => setTickers([])}>
+                Clear All
+              </Button>
             </div>
           )}
 
-          <Button onClick={() => { movementScan.reset(); setTimeout(() => movementScan.start(), 0); }} disabled={movementScan.isRunning || tickers.length === 0}>
+          <Button onClick={() => movementScan.restart()} disabled={movementScan.isRunning || tickers.length === 0}>
             <Bell className="mr-2 h-4 w-4" />
             {movementScan.isRunning ? "Scanning..." : "Detect Movements"}
           </Button>
@@ -104,7 +136,10 @@ export default function AlertsPage() {
           ) : (
             (movementScan.result as MovementResult[]).map((m, i) => (
               <Card key={i}>
-                <CardHeader>
+                <CardHeader
+                  className="cursor-pointer"
+                  onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
+                >
                   <CardTitle className="flex items-center gap-2 text-base">
                     {m.direction === "up" ? (
                       <TrendingUp className="h-4 w-4 text-green-500" />
@@ -115,16 +150,28 @@ export default function AlertsPage() {
                     <Badge variant={m.direction === "up" ? "bullish" : "bearish"}>
                       {m.change_percent > 0 ? "+" : ""}{m.change_percent?.toFixed(2)}%
                     </Badge>
+                    <Badge variant="secondary">Confidence: {m.confidence}</Badge>
+                    <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${expandedIdx === i ? "rotate-180" : ""}`} />
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm font-medium">{m.summary}</p>
-                  {m.detailed_reason && (
-                    <p className="mt-2 text-sm text-muted-foreground">{m.detailed_reason}</p>
+                  {expandedIdx === i && m.detailed_reason && (
+                    <div className="mt-3 p-3 bg-muted/30 rounded-md">
+                      <p className="text-sm font-medium mb-1">Detailed Analysis:</p>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{m.detailed_reason}</p>
+                      {m.sources && m.sources.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium text-muted-foreground">Sources:</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {m.sources.map((s, j) => (
+                              <Badge key={j} variant="secondary" className="text-xs">{s}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  <div className="mt-2 flex gap-2">
-                    <Badge variant="secondary">Confidence: {m.confidence}</Badge>
-                  </div>
                 </CardContent>
               </Card>
             ))
