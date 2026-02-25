@@ -1,4 +1,4 @@
-"""Dashboard analytics module - generates 7-day AI summary using Perplexity API."""
+"""Dashboard analytics module - generates 7-day AI summary using OpenAI API."""
 
 import json
 import os
@@ -8,13 +8,12 @@ from pathlib import Path
 
 from openai import OpenAI
 from config import (
-    PERPLEXITY_API_KEY, OUTPUT_DIR, WEEKLY_SUMMARY_DAYS,
+    OPENAI_API_KEY, OUTPUT_DIR, WEEKLY_SUMMARY_DAYS,
     SESSION_AM, SESSION_PM
 )
 
-# Perplexity API configuration
-PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
-PERPLEXITY_MODEL = "sonar"
+# OpenAI API configuration
+OPENAI_MODEL = "gpt-4o-mini"
 
 
 def load_reports_by_date() -> dict[date, dict]:
@@ -322,8 +321,8 @@ def get_weekly_summary(reports: list[dict]) -> str:
     Returns:
         Formatted weekly summary string.
     """
-    if not PERPLEXITY_API_KEY:
-        return "API key not configured. Please set PERPLEXITY_API_KEY in your .env file."
+    if not OPENAI_API_KEY:
+        return "API key not configured. Please set OPENAI_API_KEY in your .env file."
 
     if not reports:
         return "No reports available for weekly summary."
@@ -377,13 +376,10 @@ List the stocks that appeared most frequently across the week with:
 Keep the summary concise but comprehensive. Focus on trends and patterns across the week rather than individual day details."""
 
     try:
-        client = OpenAI(
-            api_key=PERPLEXITY_API_KEY,
-            base_url=PERPLEXITY_BASE_URL
-        )
+        client = OpenAI(api_key=OPENAI_API_KEY)
 
         response = client.chat.completions.create(
-            model=PERPLEXITY_MODEL,
+            model=OPENAI_MODEL,
             messages=[
                 {
                     "role": "system",

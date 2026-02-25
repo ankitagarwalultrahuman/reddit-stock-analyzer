@@ -1,11 +1,10 @@
-"""Summarizer module - uses Perplexity API to generate insights from Reddit data."""
+"""Summarizer module - uses OpenAI API to generate insights from Reddit data."""
 
 from openai import OpenAI
-from config import PERPLEXITY_API_KEY
+from config import OPENAI_API_KEY
 
-# Perplexity API configuration
-PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
-PERPLEXITY_MODEL = "sonar"  # Perplexity's main model for analysis tasks
+# OpenAI API configuration
+OPENAI_MODEL = "gpt-4o-mini"
 
 
 def format_posts_for_analysis(all_data: dict[str, list[dict]]) -> str:
@@ -114,9 +113,9 @@ Remember: This combines aggregated social media sentiment WITH real-time news co
 
 
 def analyze_with_perplexity(all_data: dict[str, list[dict]]) -> str:
-    """Send data to Perplexity API and get analysis."""
-    if not PERPLEXITY_API_KEY:
-        return "ERROR: PERPLEXITY_API_KEY not set. Please add it to your .env file."
+    """Send data to OpenAI API and get analysis."""
+    if not OPENAI_API_KEY:
+        return "ERROR: OPENAI_API_KEY not set. Please add it to your .env file."
 
     # Format the data
     formatted_data = format_posts_for_analysis(all_data)
@@ -132,29 +131,25 @@ def analyze_with_perplexity(all_data: dict[str, list[dict]]) -> str:
     if total_posts == 0:
         return "No posts found to analyze. The subreddits may be empty or requests failed."
 
-    print(f"\nSending {total_posts} posts ({total_comments} comments) to Perplexity for analysis...")
+    print(f"\nSending {total_posts} posts ({total_comments} comments) to OpenAI for analysis...")
     print(f"Data size: {len(formatted_data)} characters")
 
-    # Initialize the Perplexity client (OpenAI-compatible)
-    client = OpenAI(
-        api_key=PERPLEXITY_API_KEY,
-        base_url=PERPLEXITY_BASE_URL
-    )
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
     try:
         response = client.chat.completions.create(
-            model=PERPLEXITY_MODEL,
+            model=OPENAI_MODEL,
             messages=[
                 {
                     "role": "system",
                     "content": """You are an expert financial analyst specializing in the Indian stock market.
 
-Your task is to analyze Reddit data from Indian stock market communities AND supplement your analysis with relevant real-time news.
+Your task is to analyze Reddit data from Indian stock market communities and supplement with your knowledge of recent events.
 
 APPROACH:
 1. PRIMARY: Analyze the Reddit posts and comments provided by the user - cite specific post IDs and comment counts
-2. SUPPLEMENTARY: Search for relevant recent news about the stocks/topics mentioned to provide additional context
-3. SYNTHESIS: Combine Reddit sentiment with news to provide a comprehensive market view
+2. SUPPLEMENTARY: Use your knowledge of recent market events and news to provide additional context
+3. SYNTHESIS: Combine Reddit sentiment with known news to provide a comprehensive market view
 
 When citing:
 - For Reddit data: Use specific post IDs (e.g., "IndianStreetBets_1") and exact counts
@@ -177,7 +172,7 @@ This dual approach gives users both community sentiment AND factual news context
         return response_text
 
     except Exception as e:
-        return f"Perplexity API error: {e}"
+        return f"OpenAI API error: {e}"
 
 
 # Alias for backward compatibility
@@ -200,7 +195,7 @@ Data Sources: {', '.join([f'r/{s}' for s in subreddits])}
 Time Window: Last {time_window_hours} hours
 Total Posts Analyzed: {total_posts}
 Total Comments Analyzed: {total_comments}
-AI Analysis: Perplexity ({PERPLEXITY_MODEL})
+AI Analysis: OpenAI ({OPENAI_MODEL})
 
 ================================================================================
 """

@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import API keys from config (supports both Streamlit secrets and .env)
-from config import PERPLEXITY_API_KEY
+from config import OPENAI_API_KEY
 
 # Twilio configuration
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
@@ -343,18 +343,14 @@ def analyze_movement_with_ai(movement: StockMovement, context: dict) -> Movement
         MovementAnalysis with explanation
     """
     # Check if API key is configured
-    if not PERPLEXITY_API_KEY:
-        print("Perplexity API key not configured")
-        raise ValueError("PERPLEXITY_API_KEY not set")
+    if not OPENAI_API_KEY:
+        print("OpenAI API key not configured")
+        raise ValueError("OPENAI_API_KEY not set")
 
     try:
         from openai import OpenAI
 
-        # Perplexity uses OpenAI-compatible API
-        client = OpenAI(
-            api_key=PERPLEXITY_API_KEY,
-            base_url="https://api.perplexity.ai"
-        )
+        client = OpenAI(api_key=OPENAI_API_KEY)
 
         # Build the prompt
         direction = "UP" if movement.direction == "up" else "DOWN"
@@ -461,15 +457,14 @@ TECHNICAL INDICATORS:
 
 Give me a ONE LINE summary (under 160 characters) explaining why this stock moved, based on news and coverage from the past 72 hours. Just the reason, no preamble."""
 
-        print(f"Calling Perplexity API for {movement.ticker}...")
+        print(f"Calling OpenAI API for {movement.ticker}...")
 
-        # Use Perplexity's sonar-pro model with web search
         response = client.chat.completions.create(
-            model="sonar-pro",  # Using sonar-pro for better search results
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an experienced trader in Indian stock markets, with strong technical and fundamental analysis background. Give a one line summary behind the movement in stock prices by analysing the news and coverage on this stock or related sector and stocks from the past 72 hours. Be direct and concise - no introductions, no formatting, just the key reason in one line."
+                    "content": "You are an experienced trader in Indian stock markets, with strong technical and fundamental analysis background. Give a one line summary behind the movement in stock prices based on the provided context and your knowledge of recent events. Be direct and concise - no introductions, no formatting, just the key reason in one line."
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -479,7 +474,7 @@ Give me a ONE LINE summary (under 160 characters) explaining why this stock move
 
         # Parse response - expecting a simple one-liner
         response_text = response.choices[0].message.content.strip()
-        print(f"Perplexity response received for {movement.ticker}")
+        print(f"OpenAI response received for {movement.ticker}")
 
         # Clean up the response - remove any markdown, citations, or extra formatting
         # Take the first meaningful line if multiple lines returned
@@ -507,7 +502,7 @@ Give me a ONE LINE summary (under 160 characters) explaining why this stock move
         # Use the full response as detailed (cleaned up)
         detailed = re.sub(r'\[\d+\]', '', response_text).strip()
 
-        sources = ["perplexity_search"]
+        sources = ["openai_analysis"]
         if context.get("technicals"):
             sources.append("technicals")
         if context.get("reddit_sentiment"):
@@ -537,7 +532,7 @@ Give me a ONE LINE summary (under 160 characters) explaining why this stock move
 
         # Check for specific error types
         if "api_key" in error_msg.lower() or "unauthorized" in error_msg.lower() or "401" in error_msg:
-            error_detail = "API key issue - please check PERPLEXITY_API_KEY in secrets"
+            error_detail = "API key issue - please check OPENAI_API_KEY in secrets"
         elif "rate" in error_msg.lower() or "429" in error_msg:
             error_detail = "Rate limited - try again in a few minutes"
         elif "model" in error_msg.lower() or "404" in error_msg:

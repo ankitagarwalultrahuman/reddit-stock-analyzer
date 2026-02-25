@@ -19,11 +19,10 @@ import threading
 
 from openai import OpenAI
 
-from config import get_secret, PERPLEXITY_API_KEY
+from config import get_secret, OPENAI_API_KEY
 
-# Perplexity API configuration
-PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
-PERPLEXITY_MODEL = "sonar"
+# OpenAI API configuration
+OPENAI_MODEL = "gpt-4o-mini"
 
 # News API Configuration
 FINNHUB_API_KEY = get_secret("FINNHUB_API_KEY")
@@ -370,7 +369,7 @@ def analyze_news_with_perplexity(
     portfolio_stocks: list[str] = None
 ) -> dict:
     """
-    Send news to Perplexity for analysis and comparison with Reddit sentiment.
+    Send news to OpenAI for analysis and comparison with Reddit sentiment.
 
     Args:
         news_articles: List of NewsArticle objects
@@ -380,13 +379,13 @@ def analyze_news_with_perplexity(
     Returns:
         dict with: highlights, sentiment_divergences, market_summary, key_alerts
     """
-    if not PERPLEXITY_API_KEY:
+    if not OPENAI_API_KEY:
         return {
             "highlights": [],
             "sentiment_divergences": [],
             "market_summary": "API key not configured.",
             "key_alerts": [],
-            "error": "PERPLEXITY_API_KEY not set"
+            "error": "OPENAI_API_KEY not set"
         }
 
     if not news_articles:
@@ -400,19 +399,15 @@ def analyze_news_with_perplexity(
     prompt = get_news_analysis_prompt(news_articles, reddit_stocks, portfolio_stocks)
 
     try:
-        client = OpenAI(
-            api_key=PERPLEXITY_API_KEY,
-            base_url=PERPLEXITY_BASE_URL
-        )
+        client = OpenAI(api_key=OPENAI_API_KEY)
 
         response = client.chat.completions.create(
-            model=PERPLEXITY_MODEL,
+            model=OPENAI_MODEL,
             messages=[
                 {
                     "role": "system",
                     "content": """You are a financial news analyst specializing in the Indian stock market.
 Analyze the provided news articles and Reddit sentiment data.
-Also search for any additional recent news about the mentioned stocks to provide comprehensive coverage.
 Respond ONLY with valid JSON in the exact format requested."""
                 },
                 {
@@ -454,7 +449,7 @@ Respond ONLY with valid JSON in the exact format requested."""
             "error": str(e)
         }
     except Exception as e:
-        print(f"Perplexity API error: {e}")
+        print(f"OpenAI API error: {e}")
         return {
             "highlights": [],
             "sentiment_divergences": [],

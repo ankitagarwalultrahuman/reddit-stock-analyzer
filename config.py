@@ -143,8 +143,8 @@ TELEGRAM_BOT_TOKEN = get_secret("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = get_secret("TELEGRAM_CHAT_ID")
 TELEGRAM_ALERTS_ENABLED = True  # Enable/disable Telegram notifications
 
-# Perplexity AI (for real-time news search in movement analysis)
-PERPLEXITY_API_KEY = get_secret("PERPLEXITY_API_KEY")
+# OpenAI API (for AI-powered analysis)
+OPENAI_API_KEY = get_secret("OPENAI_API_KEY")
 
 # Swing Trading Configuration
 SWING_TRADING_ENABLED = True
