@@ -98,6 +98,9 @@ export const api = {
   // News
   getNewsHighlights: () => fetchAPI<NewsHighlights>("/api/news/highlights"),
 
+  // Scenarios
+  getScenarioLiveMarket: () => fetchAPI<ScenarioMarketSnapshot>("/api/scenarios/live-market"),
+
   // Alerts (async)
   startMovementScan: (tickers: string[], threshold = 1.0) =>
     fetchAPI<{ task_id: string }>("/api/alerts/movement/scan", {

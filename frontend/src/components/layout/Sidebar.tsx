@@ -17,11 +17,13 @@ import {
   Zap,
   ChevronLeft,
   ChevronRight,
+  ShieldAlert,
 } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/scenarios", label: "Scenarios", icon: ShieldAlert },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
   { href: "/history", label: "History", icon: TrendingUp },
   { href: "/technical", label: "Technical", icon: BarChart3 },

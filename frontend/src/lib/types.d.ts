@@ -239,6 +239,34 @@ interface NewsHighlights {
   }>;
 }
 
+interface ScenarioLiveQuote {
+  id: string;
+  name: string;
+  symbol: string;
+  resolved_symbol: string;
+  market: string;
+  category: string;
+  currency: string;
+  unit: string;
+  last: number | null;
+  previous_close: number | null;
+  change_percent: number | null;
+  fetched_at: string;
+  success: boolean;
+  error?: string;
+}
+
+interface ScenarioMarketSnapshot {
+  fetched_at: string;
+  cache_ttl_seconds: number;
+  sections: {
+    india_market: ScenarioLiveQuote[];
+    global_risk: ScenarioLiveQuote[];
+    india_equities: ScenarioLiveQuote[];
+  };
+  watchpoints: string[];
+}
+
 interface NewsArticle {
   headline: string;
   summary: string;
