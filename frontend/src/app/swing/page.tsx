@@ -10,18 +10,31 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/loading";
 import DataTable, { Column } from "@/components/ui/data-table";
-import { useSwingScan } from "@/lib/hooks/useScreener";
+import { useSwingScan, useWatchlists } from "@/lib/hooks/useScreener";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { Zap, Target, TrendingUp, Filter } from "lucide-react";
 
-const WATCHLISTS = [
-  { value: "NIFTY50", label: "NIFTY 50" },
-  { value: "NIFTY100", label: "NIFTY 100" },
-  { value: "NIFTY_NEXT50", label: "NIFTY Next 50" },
-  { value: "NIFTY_MIDCAP100", label: "Midcap 100" },
-  { value: "NIFTY_SMALLCAP100", label: "Smallcap 100" },
-  { value: "NIFTY_MIDSMALL", label: "Mid+Small (200)" },
+const FALLBACK_WATCHLISTS = [
+  { name: "NIFTY50", label: "NIFTY 50" },
+  { name: "NIFTY100", label: "NIFTY 100" },
+  { name: "NIFTY200", label: "NIFTY 200" },
+  { name: "NSE_LIQUID_SWING", label: "NSE Liquid Swing" },
+  { name: "NSE_EXPANDED_SWING", label: "NSE Expanded Swing" },
 ];
+
+function portfolioActionVariant(action?: string): "bullish" | "bearish" | "neutral" | "secondary" {
+  if (action === "allow") return "bullish";
+  if (action === "avoid") return "bearish";
+  if (action === "trim") return "neutral";
+  return "secondary";
+}
+
+function eventRiskVariant(level?: string): "bullish" | "bearish" | "neutral" | "secondary" {
+  if (level === "critical" || level === "high") return "bearish";
+  if (level === "elevated" || level === "watch") return "neutral";
+  if (level === "none" || level === "monitor") return "bullish";
+  return "secondary";
+}
 
 const allResultColumns: Column<ScreenerResult>[] = [
   { key: "ticker", label: "Ticker", sortable: true, render: (r) => <span className="font-semibold">{r.ticker}</span> },
@@ -52,11 +65,19 @@ const allResultColumns: Column<ScreenerResult>[] = [
     <Badge variant={r.setup_count > 0 ? "bullish" : "secondary"}>{r.setup_count}</Badge>
   )},
   { key: "relative_strength", label: "RS", sortable: true, align: "right", render: (r) => r.relative_strength?.toFixed(2) },
+  { key: "event_risk_level", label: "Event Risk", render: (r) => (
+    <Badge variant={eventRiskVariant(r.event_risk_level)}>{r.event_risk_level ?? "unknown"}</Badge>
+  )},
+  { key: "portfolio_action", label: "Portfolio Fit", render: (r) => (
+    <Badge variant={portfolioActionVariant(r.portfolio_action)}>{r.portfolio_action ?? "allow"}</Badge>
+  )},
 ];
 
 export default function SwingPage() {
   const swing = useSwingScan();
+  const { data: watchlists } = useWatchlists();
   const [setupFilter, setSetupFilter] = useState<string>("all");
+  const watchlistOptions = watchlists?.filter((item) => item.is_preset) ?? FALLBACK_WATCHLISTS;
 
   const result = swing.result as SwingResult | null;
 
@@ -73,25 +94,25 @@ export default function SwingPage() {
       {/* Controls */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-wrap items-end gap-4">
+          <div className="grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Universe</label>
               <Select
                 value={swing.params.watchlist}
                 onValueChange={(v) => swing.setParams({ ...swing.params, watchlist: v })}
               >
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {WATCHLISTS.map((w) => (
-                    <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                  {watchlistOptions.map((w) => (
+                    <SelectItem key={w.name} value={w.name}>{w.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-1.5 w-[200px]">
+            <div className="space-y-1.5">
               <label className="text-sm font-medium">Min Score: {swing.params.min_score}</label>
               <Slider
                 value={[swing.params.min_score]}
@@ -102,13 +123,60 @@ export default function SwingPage() {
               />
             </div>
 
-            <Button
-              onClick={() => swing.restart()}
-              disabled={swing.isRunning}
-            >
-              <Zap className="mr-2 h-4 w-4" />
-              {swing.isRunning ? "Scanning..." : "Run Swing Screener"}
-            </Button>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Single Position Cap: {swing.params.max_single_position_pct}%</label>
+              <Slider
+                value={[swing.params.max_single_position_pct]}
+                min={5}
+                max={25}
+                step={1}
+                onValueChange={([v]) => swing.setParams({ ...swing.params, max_single_position_pct: v })}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Sector Cap: {swing.params.max_sector_exposure_pct}%</label>
+              <Slider
+                value={[swing.params.max_sector_exposure_pct]}
+                min={10}
+                max={50}
+                step={5}
+                onValueChange={([v]) => swing.setParams({ ...swing.params, max_sector_exposure_pct: v })}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Earnings Buffer: {swing.params.earnings_buffer_days} day(s)</label>
+              <Slider
+                value={[swing.params.earnings_buffer_days]}
+                min={0}
+                max={14}
+                step={1}
+                onValueChange={([v]) => swing.setParams({ ...swing.params, earnings_buffer_days: v })}
+              />
+            </div>
+
+            <div className="flex flex-col justify-between gap-3 rounded-lg border border-border/60 p-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={swing.params.include_portfolio_context}
+                  onChange={(e) => swing.setParams({ ...swing.params, include_portfolio_context: e.target.checked })}
+                />
+                Portfolio-aware ranking
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Penalize setups that breach name caps, sector caps, or have near-term results risk.
+              </p>
+              <Button
+                onClick={() => swing.restart()}
+                disabled={swing.isRunning}
+              >
+                <Zap className="mr-2 h-4 w-4" />
+                {swing.isRunning ? "Scanning..." : "Run Swing Screener"}
+              </Button>
+            </div>
+
           </div>
         </CardContent>
       </Card>
@@ -157,6 +225,26 @@ export default function SwingPage() {
                   <div className="flex flex-wrap gap-1 mt-1">
                     {Object.entries(result.summary.by_regime ?? {}).map(([regime, count]) => (
                       <Badge key={regime} variant="secondary" className="text-xs">{regime}: {count as number}</Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-sm text-muted-foreground">Portfolio Actions</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {Object.entries(result.summary.portfolio_actions ?? {}).map(([action, count]) => (
+                      <Badge key={action} variant={portfolioActionVariant(action)} className="text-xs">{action}: {count as number}</Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-sm text-muted-foreground">Event Risk</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {Object.entries(result.summary.event_risk_distribution ?? {}).filter(([, count]) => Number(count) > 0).map(([level, count]) => (
+                      <Badge key={level} variant={eventRiskVariant(level)} className="text-xs">{level}: {count as number}</Badge>
                     ))}
                   </div>
                 </CardContent>
@@ -214,6 +302,14 @@ export default function SwingPage() {
                         <Badge variant="secondary" className="w-fit text-xs">
                           {s.regime}
                         </Badge>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant={portfolioActionVariant(s.portfolio_action)} className="w-fit text-xs">
+                            {s.portfolio_action ?? "allow"}
+                          </Badge>
+                          <Badge variant={eventRiskVariant(s.event_risk_level)} className="w-fit text-xs">
+                            {s.event_risk_level ?? "unknown"}
+                          </Badge>
+                        </div>
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div className="grid grid-cols-2 gap-2 text-sm">
@@ -254,9 +350,21 @@ export default function SwingPage() {
                         <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                           <div>Holding Window: {s.holding_window}</div>
                           <div>Stop Distance: {s.stop_distance_pct?.toFixed(1)}%</div>
-                          <div>Max Position: {s.capital_allocation_pct?.toFixed(1)}%</div>
+                          <div>Setup Size: {s.capital_allocation_pct?.toFixed(1)}%</div>
                           <div>RS vs NIFTY: {s.relative_strength?.toFixed(2)}%</div>
+                          <div>Recommended Size: {s.recommended_allocation_pct?.toFixed(1)}%</div>
+                          <div>Sector Exposure: {s.sector_exposure_pct?.toFixed(1)}%</div>
+                          <div>Current Position: {s.current_position_pct?.toFixed(1)}%</div>
+                          <div>Event Date: {s.event_date ?? "N/A"}</div>
                         </div>
+
+                        {s.portfolio_flags && s.portfolio_flags.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {s.portfolio_flags.map((flag, i) => (
+                              <Badge key={`${flag}-${i}`} variant="outline" className="text-xs">{flag}</Badge>
+                            ))}
+                          </div>
+                        )}
 
                         {s.signals && s.signals.length > 0 && (
                           <div className="flex flex-wrap gap-1">
@@ -288,14 +396,18 @@ export default function SwingPage() {
                     <div><span className="text-muted-foreground">Week Change:</span> <span className={row.week_change >= 0 ? "text-bullish" : "text-bearish"}>{formatPercent(row.week_change)}</span></div>
                     <div><span className="text-muted-foreground">Support:</span> {formatPrice(row.support)}</div>
                     <div><span className="text-muted-foreground">Resistance:</span> {formatPrice(row.resistance)}</div>
-                  <div><span className="text-muted-foreground">Tech Score:</span> {row.technical_score}</div>
-                  <div><span className="text-muted-foreground">Primary Setup:</span> {row.primary_setup || "None"}</div>
-                  <div><span className="text-muted-foreground">Liquidity:</span> {row.liquidity_tier}</div>
-                  <div><span className="text-muted-foreground">ADV:</span> {row.avg_traded_value_cr ? `₹${row.avg_traded_value_cr} Cr` : "N/A"}</div>
-                  <div><span className="text-muted-foreground">52W High:</span> {formatPrice(row.week_52_high)}</div>
-                  <div><span className="text-muted-foreground">52W Low:</span> {formatPrice(row.week_52_low)}</div>
-                  <div><span className="text-muted-foreground">From 52W High:</span> {row.pct_from_52w_high?.toFixed(1)}%</div>
+                    <div><span className="text-muted-foreground">Tech Score:</span> {row.technical_score}</div>
+                    <div><span className="text-muted-foreground">Primary Setup:</span> {row.primary_setup || "None"}</div>
+                    <div><span className="text-muted-foreground">Liquidity:</span> {row.liquidity_tier}</div>
+                    <div><span className="text-muted-foreground">ADV:</span> {row.avg_traded_value_cr ? `₹${row.avg_traded_value_cr} Cr` : "N/A"}</div>
+                    <div><span className="text-muted-foreground">52W High:</span> {formatPrice(row.week_52_high)}</div>
+                    <div><span className="text-muted-foreground">52W Low:</span> {formatPrice(row.week_52_low)}</div>
+                    <div><span className="text-muted-foreground">From 52W High:</span> {row.pct_from_52w_high?.toFixed(1)}%</div>
                     <div><span className="text-muted-foreground">Near 52W High:</span> {row.near_52w_high ? "Yes" : "No"}</div>
+                    <div><span className="text-muted-foreground">Portfolio Fit:</span> {row.portfolio_action}</div>
+                    <div><span className="text-muted-foreground">Recommended Size:</span> {row.recommended_allocation_pct?.toFixed(1)}%</div>
+                    <div><span className="text-muted-foreground">Event Risk:</span> {row.event_risk_level}</div>
+                    <div><span className="text-muted-foreground">Event Date:</span> {row.event_date ?? "N/A"}</div>
                   </div>
                 )}
               />
@@ -319,6 +431,14 @@ interface SwingResult {
     by_regime?: Record<string, number>;
     bias_distribution: Record<string, number>;
     liquidity_distribution?: Record<string, number>;
+    portfolio_actions?: Record<string, number>;
+    event_risk_distribution?: Record<string, number>;
+    risk_limits?: {
+      max_single_position_pct: number;
+      max_sector_exposure_pct: number;
+      max_positions: number;
+      earnings_buffer_days: number;
+    };
   };
 }
 
@@ -339,6 +459,14 @@ interface SwingSetup {
   holding_window: string;
   stop_distance_pct: number;
   capital_allocation_pct: number;
+  recommended_allocation_pct?: number;
+  portfolio_action?: string;
+  portfolio_flags?: string[];
+  sector_exposure_pct?: number;
+  current_position_pct?: number;
+  event_risk_level?: string;
+  event_date?: string | null;
+  days_to_event?: number | null;
 }
 
 interface ScreenerResult {
@@ -364,5 +492,13 @@ interface ScreenerResult {
   week_52_low: number;
   pct_from_52w_high: number;
   near_52w_high: boolean;
+  event_risk_level?: string;
+  event_date?: string | null;
+  days_to_event?: number | null;
+  portfolio_action?: string;
+  recommended_allocation_pct?: number;
+  portfolio_flags?: string[];
+  sector_exposure_pct?: number;
+  current_position_pct?: number;
   [key: string]: unknown;
 }

@@ -49,6 +49,19 @@ export const api = {
     fetchAPI<{ success: boolean }>(`/api/portfolio/holdings/${ticker}`, { method: "DELETE" }),
   getPortfolioAnalysis: () => fetchAPI<PortfolioAnalysis>("/api/portfolio/analysis"),
   getGrowwHoldings: () => fetchAPI<GrowwHolding[]>("/api/portfolio/groww/holdings"),
+  getPortfolioRisk: (params?: {
+    max_single_position_pct?: number;
+    max_sector_exposure_pct?: number;
+    max_positions?: number;
+    earnings_buffer_days?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.max_single_position_pct !== undefined) query.set("max_single_position_pct", String(params.max_single_position_pct));
+    if (params?.max_sector_exposure_pct !== undefined) query.set("max_sector_exposure_pct", String(params.max_sector_exposure_pct));
+    if (params?.max_positions !== undefined) query.set("max_positions", String(params.max_positions));
+    if (params?.earnings_buffer_days !== undefined) query.set("earnings_buffer_days", String(params.earnings_buffer_days));
+    return fetchAPI<PortfolioRisk>(`/api/portfolio/risk${query.size ? `?${query}` : ""}`);
+  },
 
   // Screener (async)
   startScan: (watchlist: string, strategy: string, min_matches: number) =>
@@ -60,12 +73,25 @@ export const api = {
   getStrategies: () => fetchAPI<Record<string, StrategyInfo>>("/api/screener/strategies"),
 
   // Swing (async)
-  startSwingScan: (watchlist: string, min_score: number) =>
+  startSwingScan: (
+    watchlist: string,
+    min_score: number,
+    params?: {
+      max_single_position_pct?: number;
+      max_sector_exposure_pct?: number;
+      max_positions?: number;
+      earnings_buffer_days?: number;
+      include_portfolio_context?: boolean;
+    }
+  ) =>
     fetchAPI<{ task_id: string }>("/api/swing/scan", {
       method: "POST",
-      body: JSON.stringify({ watchlist, min_score }),
+      body: JSON.stringify({ watchlist, min_score, ...params }),
     }),
   getSwingResult: (taskId: string) => fetchAPI<TaskResult>(`/api/swing/scan/${taskId}`),
+
+  // Watchlists
+  getWatchlists: () => fetchAPI<WatchlistMeta[]>("/api/watchlists"),
 
   // Sectors (async)
   startSectorAnalysis: () =>

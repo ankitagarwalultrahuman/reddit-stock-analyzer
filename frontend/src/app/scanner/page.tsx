@@ -8,16 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/loading";
-import { useScreenerScan, useStrategies } from "@/lib/hooks/useScreener";
+import { useScreenerScan, useStrategies, useWatchlists } from "@/lib/hooks/useScreener";
 import { Search, Zap, ChevronDown } from "lucide-react";
 
-const WATCHLISTS = [
-  { value: "NIFTY50", label: "NIFTY 50" },
-  { value: "NIFTY100", label: "NIFTY 100" },
-  { value: "NIFTY_NEXT50", label: "NIFTY Next 50" },
-  { value: "NIFTY_MIDCAP100", label: "Midcap 100" },
-  { value: "NIFTY_SMALLCAP100", label: "Smallcap 100" },
-  { value: "NIFTY_MIDSMALL", label: "Mid+Small (200)" },
+const FALLBACK_WATCHLISTS = [
+  { name: "NIFTY50", label: "NIFTY 50" },
+  { name: "NIFTY100", label: "NIFTY 100" },
+  { name: "NIFTY200", label: "NIFTY 200" },
+  { name: "NSE_LIQUID_SWING", label: "NSE Liquid Swing" },
 ];
 
 const QUICK_SCANS = [
@@ -30,8 +28,10 @@ const QUICK_SCANS = [
 
 export default function ScannerPage() {
   const { data: strategies } = useStrategies();
+  const { data: watchlists } = useWatchlists();
   const scan = useScreenerScan();
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const watchlistOptions = watchlists?.filter((item) => item.is_preset) ?? FALLBACK_WATCHLISTS;
 
   const handleScan = () => scan.restart();
 
@@ -62,8 +62,8 @@ export default function ScannerPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {WATCHLISTS.map((w) => (
-                    <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                  {watchlistOptions.map((w) => (
+                    <SelectItem key={w.name} value={w.name}>{w.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

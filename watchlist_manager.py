@@ -7,14 +7,20 @@ Provides:
 - JSON-based persistence
 """
 
+import csv
 import json
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
+from io import StringIO
+
+import requests
 
 # Watchlist storage file
 WATCHLIST_FILE = "watchlists.json"
+UNIVERSE_CACHE_FILE = "universe_cache.json"
+UNIVERSE_CACHE_TTL_HOURS = 24
 
 # =============================================================================
 # NIFTY 50 STOCKS (as of 2024)
@@ -200,6 +206,39 @@ SECTOR_STOCKS = {
 # All sectors list
 ALL_SECTORS = list(SECTOR_STOCKS.keys())
 
+LIVE_UNIVERSE_DEFS = {
+    "NIFTY50": {
+        "label": "NIFTY 50",
+        "description": "NIFTY 50 Index constituents",
+        "urls": ["https://niftyindices.com/IndexConstituent/ind_nifty50list.csv"],
+    },
+    "NIFTY_NEXT50": {
+        "label": "NIFTY Next 50",
+        "description": "NIFTY Next 50 Index constituents",
+        "urls": ["https://niftyindices.com/IndexConstituent/ind_niftynext50list.csv"],
+    },
+    "NIFTY100": {
+        "label": "NIFTY 100",
+        "description": "NIFTY 100 Index constituents",
+        "urls": ["https://niftyindices.com/IndexConstituent/ind_nifty100list.csv"],
+    },
+    "NIFTY200": {
+        "label": "NIFTY 200",
+        "description": "NIFTY 200 Index constituents",
+        "urls": ["https://niftyindices.com/IndexConstituent/ind_nifty200list.csv"],
+    },
+    "NIFTY_MIDCAP100": {
+        "label": "NIFTY Midcap 100",
+        "description": "NIFTY Midcap 100 - Prime swing trading opportunities",
+        "urls": ["https://niftyindices.com/IndexConstituent/ind_niftymidcap100list.csv"],
+    },
+    "NIFTY_SMALLCAP100": {
+        "label": "NIFTY Smallcap 100",
+        "description": "NIFTY Smallcap 100 - High volatility swing trades",
+        "urls": ["https://niftyindices.com/IndexConstituent/ind_niftysmallcap100list.csv"],
+    },
+}
+
 
 @dataclass
 class Watchlist:
@@ -210,48 +249,220 @@ class Watchlist:
     created_at: str = ""
     updated_at: str = ""
     is_preset: bool = False
+    source: str = "static"
+    last_refreshed: str = ""
+    is_fallback: bool = False
+
+
+def _normalize_symbol(value: str) -> str:
+    text = str(value or "").upper().strip()
+    text = text.replace(".NS", "").replace(".BO", "")
+    return "".join(ch for ch in text if ch.isalnum() or ch in {"&", "-"})
+
+
+def _dedupe_symbols(symbols: list[str]) -> list[str]:
+    seen = set()
+    ordered = []
+    for symbol in symbols:
+        normalized = _normalize_symbol(symbol)
+        if normalized and normalized not in seen:
+            ordered.append(normalized)
+            seen.add(normalized)
+    return ordered
+
+
+def _fallback_universe_map() -> dict[str, list[str]]:
+    return {
+        "NIFTY50": NIFTY50_STOCKS,
+        "NIFTY_NEXT50": NIFTY_NEXT50_STOCKS,
+        "NIFTY100": NIFTY100_STOCKS,
+        "NIFTY200": _dedupe_symbols(NIFTY100_STOCKS + NIFTY_MIDCAP100_STOCKS),
+        "NIFTY_MIDCAP100": NIFTY_MIDCAP100_STOCKS,
+        "NIFTY_SMALLCAP100": NIFTY_SMALLCAP100_STOCKS,
+        "NIFTY_MIDSMALL": NIFTY_MIDSMALL_STOCKS,
+        "NSE_LIQUID_SWING": _dedupe_symbols(NIFTY100_STOCKS + NIFTY_MIDCAP100_STOCKS),
+    }
+
+
+def _load_universe_cache() -> dict:
+    cache_path = Path(UNIVERSE_CACHE_FILE)
+    if not cache_path.exists():
+        return {}
+    try:
+        with open(cache_path, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_universe_cache(payload: dict):
+    try:
+        with open(UNIVERSE_CACHE_FILE, "w") as f:
+            json.dump(payload, f, indent=2)
+    except Exception:
+        pass
+
+
+def _cache_is_fresh(payload: dict) -> bool:
+    fetched_at = payload.get("fetched_at")
+    if not fetched_at:
+        return False
+    try:
+        cached_at = datetime.fromisoformat(fetched_at)
+    except Exception:
+        return False
+    return datetime.now() - cached_at < timedelta(hours=UNIVERSE_CACHE_TTL_HOURS)
+
+
+def _extract_symbols_from_csv(text: str) -> list[str]:
+    reader = csv.DictReader(StringIO(text))
+    if not reader.fieldnames:
+        return []
+
+    symbol_key = None
+    for field in reader.fieldnames:
+        lowered = field.lower()
+        if lowered in {"symbol", "ticker", "code"}:
+            symbol_key = field
+            break
+
+    if not symbol_key:
+        for field in reader.fieldnames:
+            if "symbol" in field.lower():
+                symbol_key = field
+                break
+
+    if not symbol_key:
+        return []
+
+    return _dedupe_symbols([row.get(symbol_key, "") for row in reader])
+
+
+def _fetch_symbols_from_source(urls: list[str]) -> list[str]:
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/csv,application/json,text/plain,*/*",
+        "Referer": "https://niftyindices.com/",
+    }
+    for url in urls:
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            symbols = _extract_symbols_from_csv(response.text)
+            if symbols:
+                return symbols
+        except Exception:
+            continue
+    return []
+
+
+def refresh_market_universes(force_refresh: bool = False) -> dict:
+    cached = _load_universe_cache()
+    if cached and not force_refresh and _cache_is_fresh(cached):
+        return cached
+
+    fallback = _fallback_universe_map()
+    payload = {
+        "fetched_at": datetime.now().isoformat(),
+        "source": "fallback",
+        "watchlists": {},
+    }
+
+    live_results = {}
+    for name, meta in LIVE_UNIVERSE_DEFS.items():
+        symbols = _fetch_symbols_from_source(meta["urls"])
+        if symbols:
+            live_results[name] = symbols
+
+    if live_results:
+        payload["source"] = "live"
+        for name, meta in LIVE_UNIVERSE_DEFS.items():
+            stocks = live_results.get(name) or fallback.get(name, [])
+            payload["watchlists"][name] = {
+                "name": name,
+                "label": meta["label"],
+                "description": meta["description"],
+                "stocks": stocks,
+                "source": "live" if name in live_results else "fallback",
+                "is_fallback": name not in live_results,
+            }
+    else:
+        for name, stocks in fallback.items():
+            payload["watchlists"][name] = {
+                "name": name,
+                "label": name.replace("_", " "),
+                "description": LIVE_UNIVERSE_DEFS.get(name, {}).get("description", name.replace("_", " ")),
+                "stocks": stocks,
+                "source": "fallback",
+                "is_fallback": True,
+            }
+
+    # Derived universes
+    nifty100 = payload["watchlists"].get("NIFTY100", {}).get("stocks") or fallback["NIFTY100"]
+    nifty200 = payload["watchlists"].get("NIFTY200", {}).get("stocks") or fallback["NIFTY200"]
+    midcap = payload["watchlists"].get("NIFTY_MIDCAP100", {}).get("stocks") or fallback["NIFTY_MIDCAP100"]
+    smallcap = payload["watchlists"].get("NIFTY_SMALLCAP100", {}).get("stocks") or fallback["NIFTY_SMALLCAP100"]
+    next50 = payload["watchlists"].get("NIFTY_NEXT50", {}).get("stocks") or fallback["NIFTY_NEXT50"]
+
+    payload["watchlists"]["NIFTY_MIDSMALL"] = {
+        "name": "NIFTY_MIDSMALL",
+        "label": "Mid + Small 200",
+        "description": "Midcap + smallcap combined universe",
+        "stocks": _dedupe_symbols(midcap + smallcap),
+        "source": payload["source"],
+        "is_fallback": payload["source"] != "live",
+    }
+    payload["watchlists"]["NSE_LIQUID_SWING"] = {
+        "name": "NSE_LIQUID_SWING",
+        "label": "NSE Liquid Swing",
+        "description": "Liquid swing universe built from NIFTY 200 leaders",
+        "stocks": _dedupe_symbols(nifty200),
+        "source": payload["source"],
+        "is_fallback": payload["source"] != "live",
+    }
+    payload["watchlists"]["NSE_EXPANDED_SWING"] = {
+        "name": "NSE_EXPANDED_SWING",
+        "label": "NSE Expanded Swing",
+        "description": "Expanded liquid swing universe from Next 50, Midcap 100, and Smallcap 100",
+        "stocks": _dedupe_symbols(next50 + midcap + smallcap),
+        "source": payload["source"],
+        "is_fallback": payload["source"] != "live",
+    }
+    payload["watchlists"]["NIFTY100"] = payload["watchlists"].get("NIFTY100") or {
+        "name": "NIFTY100",
+        "label": "NIFTY 100",
+        "description": "NIFTY 100 Index constituents",
+        "stocks": _dedupe_symbols(nifty100),
+        "source": payload["source"],
+        "is_fallback": payload["source"] != "live",
+    }
+
+    _save_universe_cache(payload)
+    return payload
+
+
+def get_universe_metadata(name: str) -> dict:
+    payload = refresh_market_universes(force_refresh=False)
+    return payload.get("watchlists", {}).get(name, {})
 
 
 def get_preset_watchlists() -> dict[str, Watchlist]:
     """Get all preset watchlists."""
-    presets = {
-        "NIFTY50": Watchlist(
-            name="NIFTY50",
-            stocks=NIFTY50_STOCKS,
-            description="NIFTY 50 Index constituents",
+    payload = refresh_market_universes(force_refresh=False)
+    fallback = _fallback_universe_map()
+    presets = {}
+
+    for name, meta in payload.get("watchlists", {}).items():
+        stocks = meta.get("stocks") or fallback.get(name, [])
+        presets[name] = Watchlist(
+            name=name,
+            stocks=stocks,
+            description=meta.get("description", ""),
             is_preset=True,
-        ),
-        "NIFTY100": Watchlist(
-            name="NIFTY100",
-            stocks=NIFTY100_STOCKS,
-            description="NIFTY 100 Index constituents (NIFTY50 + NIFTY Next 50)",
-            is_preset=True,
-        ),
-        "NIFTY_NEXT50": Watchlist(
-            name="NIFTY_NEXT50",
-            stocks=NIFTY_NEXT50_STOCKS,
-            description="NIFTY Next 50 Index constituents",
-            is_preset=True,
-        ),
-        "NIFTY_MIDCAP100": Watchlist(
-            name="NIFTY_MIDCAP100",
-            stocks=NIFTY_MIDCAP100_STOCKS,
-            description="NIFTY Midcap 100 - Prime swing trading opportunities",
-            is_preset=True,
-        ),
-        "NIFTY_SMALLCAP100": Watchlist(
-            name="NIFTY_SMALLCAP100",
-            stocks=NIFTY_SMALLCAP100_STOCKS,
-            description="NIFTY Smallcap 100 - High volatility swing trades",
-            is_preset=True,
-        ),
-        "NIFTY_MIDSMALL": Watchlist(
-            name="NIFTY_MIDSMALL",
-            stocks=NIFTY_MIDSMALL_STOCKS,
-            description="Midcap + Smallcap combined (200 stocks) - Full swing trading universe",
-            is_preset=True,
-        ),
-    }
+            source=meta.get("source", payload.get("source", "fallback")),
+            last_refreshed=payload.get("fetched_at", ""),
+            is_fallback=bool(meta.get("is_fallback", False)),
+        )
 
     # Add sector watchlists
     for sector, stocks in SECTOR_STOCKS.items():
@@ -260,6 +471,9 @@ def get_preset_watchlists() -> dict[str, Watchlist]:
             stocks=stocks,
             description=f"{sector} sector stocks",
             is_preset=True,
+            source="curated",
+            last_refreshed=payload.get("fetched_at", ""),
+            is_fallback=False,
         )
 
     return presets
@@ -461,3 +675,25 @@ def get_all_sectors() -> list[str]:
 def get_sector_stocks(sector: str) -> list[str]:
     """Get stocks for a specific sector."""
     return SECTOR_STOCKS.get(sector, [])
+
+
+def list_watchlists() -> list[dict]:
+    """List watchlists with lightweight metadata for the frontend."""
+    payload = refresh_market_universes(force_refresh=False)
+    live_meta = payload.get("watchlists", {})
+    watchlists = []
+    for watchlist in get_all_watchlists().values():
+        meta = live_meta.get(watchlist.name, {})
+        watchlists.append({
+            "name": watchlist.name,
+            "label": meta.get("label", watchlist.name.replace("_", " ")),
+            "description": watchlist.description,
+            "stock_count": len(watchlist.stocks),
+            "is_preset": watchlist.is_preset,
+            "source": watchlist.source,
+            "last_refreshed": watchlist.last_refreshed,
+            "is_fallback": watchlist.is_fallback,
+        })
+
+    watchlists.sort(key=lambda item: (not item["is_preset"], item["name"]))
+    return watchlists

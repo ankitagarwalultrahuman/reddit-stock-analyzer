@@ -5,9 +5,10 @@ import Header from "@/components/layout/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LoadingSection } from "@/components/ui/loading";
-import { useHoldings, useAddHolding, useRemoveHolding, usePortfolioAnalysis, useGrowwHoldings } from "@/lib/hooks/usePortfolio";
+import { useHoldings, useAddHolding, useRemoveHolding, usePortfolioAnalysis, useGrowwHoldings, usePortfolioRisk } from "@/lib/hooks/usePortfolio";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { Plus, Trash2 } from "lucide-react";
@@ -25,6 +26,13 @@ export default function PortfolioPage() {
   const { data: analysis } = usePortfolioAnalysis();
   const addHolding = useAddHolding();
   const removeHolding = useRemoveHolding();
+  const [riskLimits, setRiskLimits] = useState({
+    max_single_position_pct: 12,
+    max_sector_exposure_pct: 30,
+    max_positions: 12,
+    earnings_buffer_days: 7,
+  });
+  const { data: risk, isLoading: riskLoading } = usePortfolioRisk(riskLimits);
 
   const [ticker, setTicker] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -53,10 +61,136 @@ export default function PortfolioPage() {
         }, {})
       ).map(([name, value]) => ({ name, value }))
     : [];
+  const manualRows = risk?.holdings ?? [];
 
   return (
     <div className="space-y-6">
       <Header title="Portfolio Analysis" subtitle="Track your holdings against Reddit sentiment" />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Risk Limits</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Single Position Cap: {riskLimits.max_single_position_pct}%</label>
+              <Slider
+                value={[riskLimits.max_single_position_pct]}
+                min={5}
+                max={25}
+                step={1}
+                onValueChange={([v]) => setRiskLimits({ ...riskLimits, max_single_position_pct: v })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Sector Cap: {riskLimits.max_sector_exposure_pct}%</label>
+              <Slider
+                value={[riskLimits.max_sector_exposure_pct]}
+                min={10}
+                max={50}
+                step={5}
+                onValueChange={([v]) => setRiskLimits({ ...riskLimits, max_sector_exposure_pct: v })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Max Positions: {riskLimits.max_positions}</label>
+              <Slider
+                value={[riskLimits.max_positions]}
+                min={4}
+                max={20}
+                step={1}
+                onValueChange={([v]) => setRiskLimits({ ...riskLimits, max_positions: v })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Earnings Buffer: {riskLimits.earnings_buffer_days} day(s)</label>
+              <Slider
+                value={[riskLimits.earnings_buffer_days]}
+                min={0}
+                max={14}
+                step={1}
+                onValueChange={([v]) => setRiskLimits({ ...riskLimits, earnings_buffer_days: v })}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {risk && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Portfolio Value</p>
+                <p className="text-2xl font-bold">{formatPrice(risk.summary.total_value)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Positions</p>
+                <p className="text-2xl font-bold">{risk.summary.position_count}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Largest Position</p>
+                <p className="text-2xl font-bold">{risk.summary.largest_position_pct.toFixed(1)}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Largest Sector</p>
+                <p className="text-2xl font-bold">{risk.summary.largest_sector_pct.toFixed(1)}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Earnings Risk</p>
+                <p className="text-2xl font-bold">{risk.summary.earnings_risk_positions}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Sector Exposure</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {risk.sector_exposure.map((sector) => (
+                    <div key={sector.sector} className="flex items-center justify-between border-b pb-2 text-sm">
+                      <div>
+                        <p className="font-medium">{sector.sector}</p>
+                        <p className="text-xs text-muted-foreground">{formatPrice(sector.market_value)}</p>
+                      </div>
+                      <Badge variant={sector.is_overweight ? "bearish" : "secondary"}>{sector.exposure_pct.toFixed(1)}%</Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Risk Warnings</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {risk.warnings.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No active portfolio limit breaches.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {risk.warnings.map((warning) => (
+                      <Badge key={warning} variant="outline" className="mr-2 mb-2">{warning}</Badge>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
 
       <Tabs defaultValue="manual">
         <TabsList>
@@ -107,12 +241,12 @@ export default function PortfolioPage() {
           </Card>
 
           {/* Holdings Table */}
-          <Card>
+            <Card>
             <CardHeader>
               <CardTitle className="text-base">Your Holdings</CardTitle>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
+              {isLoading || riskLoading ? (
                 <LoadingSection />
               ) : !holdings || holdings.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No holdings added yet.</p>
@@ -122,17 +256,31 @@ export default function PortfolioPage() {
                     <thead>
                       <tr className="border-b text-left">
                         <th className="pb-2 font-medium">Ticker</th>
+                        <th className="pb-2 font-medium">Sector</th>
                         <th className="pb-2 font-medium">Qty</th>
                         <th className="pb-2 font-medium">Avg Price</th>
+                        <th className="pb-2 font-medium">Current</th>
+                        <th className="pb-2 font-medium">Weight</th>
+                        <th className="pb-2 font-medium">Event Risk</th>
                         <th className="pb-2 font-medium">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {holdings.map((h) => (
+                      {manualRows.map((h) => (
                         <tr key={h.ticker} className="border-b">
                           <td className="py-2 font-semibold">{h.ticker}</td>
+                          <td>{h.sector}</td>
                           <td>{h.quantity}</td>
                           <td>{formatPrice(h.avg_price)}</td>
+                          <td>{formatPrice(h.current_price ?? h.avg_price)}</td>
+                          <td>
+                            <Badge variant={h.is_overweight ? "bearish" : "secondary"}>{h.weight_pct.toFixed(1)}%</Badge>
+                          </td>
+                          <td>
+                            <Badge variant={h.has_earnings_risk ? "bearish" : "secondary"}>
+                              {h.event_risk?.flag ?? "No data"}
+                            </Badge>
+                          </td>
                           <td>
                             <Button
                               variant="ghost"

@@ -155,6 +155,66 @@ interface PortfolioAnalysis {
   summary: string;
 }
 
+interface EventRiskData {
+  ticker: string;
+  risk_level: string;
+  risk_score: number;
+  flag: string;
+  event_date?: string | null;
+  days_to_event?: number | null;
+  should_avoid_new_entries: boolean;
+  source: string;
+  error?: string | null;
+}
+
+interface PortfolioRiskHolding extends Holding {
+  sector: string;
+  invested_value: number;
+  market_value: number;
+  weight_pct: number;
+  is_overweight: boolean;
+  has_earnings_risk: boolean;
+  event_risk?: EventRiskData | null;
+}
+
+interface PortfolioRiskSector {
+  sector: string;
+  market_value: number;
+  exposure_pct: number;
+  is_overweight: boolean;
+}
+
+interface PortfolioRisk {
+  summary: {
+    total_value: number;
+    position_count: number;
+    largest_position_pct: number;
+    largest_sector_pct: number;
+    concentration_hhi: number;
+    earnings_risk_positions: number;
+  };
+  holdings: PortfolioRiskHolding[];
+  sector_exposure: PortfolioRiskSector[];
+  warnings: string[];
+  limits: {
+    max_single_position_pct: number;
+    max_sector_exposure_pct: number;
+    max_positions: number;
+    earnings_buffer_days: number;
+  };
+}
+
+interface WatchlistMeta {
+  name: string;
+  label: string;
+  description: string;
+  stock_count: number;
+  is_preset: boolean;
+  source: string;
+  last_refreshed?: string;
+  is_fallback: boolean;
+}
+
 // Screener types
 interface ScreenerResult {
   ticker: string;
@@ -178,6 +238,7 @@ interface SwingSetup {
   ticker: string;
   sector: string;
   setup_type: string;
+  regime: string;
   current_price: number;
   entry_zone: [number, number];
   stop_loss: number;
@@ -188,6 +249,17 @@ interface SwingSetup {
   signals: string[];
   technical_summary: Record<string, unknown>;
   relative_strength: number;
+  holding_window?: string;
+  stop_distance_pct?: number;
+  capital_allocation_pct?: number;
+  recommended_allocation_pct?: number;
+  portfolio_action?: string;
+  portfolio_flags?: string[];
+  sector_exposure_pct?: number;
+  current_position_pct?: number;
+  event_risk_level?: string;
+  event_date?: string | null;
+  days_to_event?: number | null;
 }
 
 // Task types

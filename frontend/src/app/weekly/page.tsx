@@ -8,16 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/loading";
 import DataTable, { Column } from "@/components/ui/data-table";
-import { useWeeklyPulse } from "@/lib/hooks/useScreener";
+import { useWatchlists, useWeeklyPulse } from "@/lib/hooks/useScreener";
 import { formatPrice, formatPercent } from "@/lib/utils";
 import { Calendar } from "lucide-react";
 
-const WATCHLISTS = [
-  { value: "NIFTY50", label: "NIFTY 50" },
-  { value: "NIFTY100", label: "NIFTY 100" },
-  { value: "NIFTY_MIDCAP100", label: "Midcap 100" },
-  { value: "NIFTY_SMALLCAP100", label: "Smallcap 100" },
-  { value: "NIFTY_MIDSMALL", label: "Mid+Small (200)" },
+const FALLBACK_WATCHLISTS = [
+  { name: "NIFTY50", label: "NIFTY 50" },
+  { name: "NIFTY100", label: "NIFTY 100" },
+  { name: "NIFTY200", label: "NIFTY 200" },
+  { name: "NSE_LIQUID_SWING", label: "NSE Liquid Swing" },
 ];
 
 const allStockColumns: Column<StockMetric>[] = [
@@ -64,8 +63,10 @@ const allStockColumns: Column<StockMetric>[] = [
 
 export default function WeeklyPage() {
   const pulse = useWeeklyPulse();
+  const { data: watchlists } = useWatchlists();
   const report = pulse.result as { report: WeeklyReport; summary: string } | null;
   const r = report?.report;
+  const watchlistOptions = watchlists?.filter((item) => item.is_preset) ?? FALLBACK_WATCHLISTS;
 
   return (
     <div className="space-y-6">
@@ -82,8 +83,8 @@ export default function WeeklyPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {WATCHLISTS.map((w) => (
-                <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+              {watchlistOptions.map((w) => (
+                <SelectItem key={w.name} value={w.name}>{w.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>

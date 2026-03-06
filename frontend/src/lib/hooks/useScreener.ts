@@ -109,11 +109,27 @@ export function useScreenerScan() {
 
 export function useSwingScan() {
   const storageKey = "task:swing";
-  const defaultParams = { watchlist: "NIFTY50", min_score: 60 };
+  const defaultParams = {
+    watchlist: "NIFTY50",
+    min_score: 60,
+    max_single_position_pct: 12,
+    max_sector_exposure_pct: 30,
+    max_positions: 12,
+    earnings_buffer_days: 7,
+    include_portfolio_context: true,
+  };
   const [params, setParams] = useState(() => restoreParams(storageKey + ":params", defaultParams));
   const paramsRef = useRef(params);
 
-  const paramKey = `${params.watchlist}:${params.min_score}`;
+  const paramKey = [
+    params.watchlist,
+    params.min_score,
+    params.max_single_position_pct,
+    params.max_sector_exposure_pct,
+    params.max_positions,
+    params.earnings_buffer_days,
+    params.include_portfolio_context ? "portfolio" : "no-portfolio",
+  ].join(":");
 
   const updateParams = useCallback((newParams: typeof defaultParams) => {
     paramsRef.current = newParams;
@@ -122,7 +138,13 @@ export function useSwingScan() {
   }, []);
 
   const task = useAsyncTask(
-    () => api.startSwingScan(paramsRef.current.watchlist, paramsRef.current.min_score),
+    () => api.startSwingScan(paramsRef.current.watchlist, paramsRef.current.min_score, {
+      max_single_position_pct: paramsRef.current.max_single_position_pct,
+      max_sector_exposure_pct: paramsRef.current.max_sector_exposure_pct,
+      max_positions: paramsRef.current.max_positions,
+      earnings_buffer_days: paramsRef.current.earnings_buffer_days,
+      include_portfolio_context: paramsRef.current.include_portfolio_context,
+    }),
     api.getSwingResult,
     2000,
     storageKey + ":" + paramKey
@@ -168,5 +190,13 @@ export function useStrategies() {
     queryKey: ["strategies"],
     queryFn: api.getStrategies,
     staleTime: Infinity,
+  });
+}
+
+export function useWatchlists() {
+  return useQuery({
+    queryKey: ["watchlists"],
+    queryFn: api.getWatchlists,
+    staleTime: 30 * 60 * 1000,
   });
 }

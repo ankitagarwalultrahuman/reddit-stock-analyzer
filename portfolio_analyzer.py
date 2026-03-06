@@ -15,6 +15,7 @@ You'll need to manually export your portfolio as CSV.
 import os
 import re
 import json
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -26,6 +27,12 @@ from dashboard_analytics import parse_key_insights_structured, parse_stock_menti
 
 PORTFOLIO_FILE = "portfolio.json"
 PORTFOLIO_CSV_FOLDER = "portfolio_imports"
+DEFAULT_RISK_LIMITS = {
+    "max_single_position_pct": 12.0,
+    "max_sector_exposure_pct": 30.0,
+    "max_positions": 12,
+    "earnings_buffer_days": 7,
+}
 
 
 # Common ticker mappings (Groww names -> NSE symbols)
@@ -116,6 +123,217 @@ def save_portfolio(holdings: list[dict]):
     """Save portfolio to JSON file."""
     with open(PORTFOLIO_FILE, 'w') as f:
         json.dump(holdings, f, indent=2)
+
+
+def _merge_risk_limits(risk_limits: Optional[dict] = None) -> dict:
+    merged = dict(DEFAULT_RISK_LIMITS)
+    if risk_limits:
+        merged.update({k: v for k, v in risk_limits.items() if v is not None})
+    return merged
+
+
+def _get_live_price(ticker: str, fallback_price: float = 0) -> float:
+    try:
+        from stock_history import get_current_price
+
+        quote = get_current_price(ticker)
+        if quote.get("success") and quote.get("current_price"):
+            return float(quote["current_price"])
+    except Exception:
+        pass
+    return float(fallback_price or 0)
+
+
+def enrich_holdings_with_market_data(
+    holdings: Optional[list[dict]] = None,
+    earnings_buffer_days: int = 7,
+) -> list[dict]:
+    holdings = holdings if holdings is not None else load_portfolio()
+    if not holdings:
+        return []
+
+    from event_risk import get_event_risk_map
+    from watchlist_manager import get_sector_for_stock
+
+    event_map = get_event_risk_map(
+        [holding["ticker"] for holding in holdings],
+        lookahead_days=max(earnings_buffer_days, 14),
+    )
+
+    enriched = []
+    for holding in holdings:
+        ticker = normalize_ticker(holding.get("ticker", ""))
+        quantity = int(holding.get("quantity") or 0)
+        avg_price = float(holding.get("avg_price") or 0)
+        current_price = _get_live_price(ticker, fallback_price=avg_price)
+        invested_value = round(quantity * avg_price, 2)
+        market_value = round(quantity * current_price, 2)
+        pnl = round(market_value - invested_value, 2)
+        pnl_percent = round((pnl / invested_value) * 100, 2) if invested_value > 0 else 0.0
+        event_risk = event_map.get(ticker)
+
+        enriched.append({
+            **holding,
+            "ticker": ticker,
+            "sector": get_sector_for_stock(ticker) or "Unknown",
+            "current_price": round(current_price, 2),
+            "invested_value": invested_value,
+            "market_value": market_value,
+            "pnl": pnl,
+            "pnl_percent": pnl_percent,
+            "event_risk": event_risk.__dict__ if event_risk else None,
+        })
+
+    return enriched
+
+
+def calculate_portfolio_risk(
+    holdings: Optional[list[dict]] = None,
+    risk_limits: Optional[dict] = None,
+) -> dict:
+    limits = _merge_risk_limits(risk_limits)
+    enriched = enrich_holdings_with_market_data(
+        holdings=holdings,
+        earnings_buffer_days=int(limits["earnings_buffer_days"]),
+    )
+    if not enriched:
+        return {
+            "summary": {
+                "total_value": 0,
+                "position_count": 0,
+                "largest_position_pct": 0,
+                "largest_sector_pct": 0,
+                "concentration_hhi": 0,
+                "earnings_risk_positions": 0,
+            },
+            "holdings": [],
+            "sector_exposure": [],
+            "warnings": [],
+            "limits": limits,
+        }
+
+    total_value = sum(holding["market_value"] for holding in enriched) or 0.0
+    sector_values: dict[str, float] = defaultdict(float)
+
+    for holding in enriched:
+        weight = (holding["market_value"] / total_value) * 100 if total_value > 0 else 0.0
+        holding["weight_pct"] = round(weight, 2)
+        holding["is_overweight"] = weight > float(limits["max_single_position_pct"])
+        event_risk = holding.get("event_risk") or {}
+        holding["has_earnings_risk"] = bool(
+            event_risk.get("days_to_event") is not None
+            and event_risk.get("days_to_event") <= int(limits["earnings_buffer_days"])
+        )
+        sector_values[holding["sector"]] += holding["market_value"]
+
+    sector_rows = []
+    for sector, value in sector_values.items():
+        exposure_pct = (value / total_value) * 100 if total_value > 0 else 0.0
+        sector_rows.append({
+            "sector": sector,
+            "market_value": round(value, 2),
+            "exposure_pct": round(exposure_pct, 2),
+            "is_overweight": exposure_pct > float(limits["max_sector_exposure_pct"]),
+        })
+    sector_rows.sort(key=lambda row: row["exposure_pct"], reverse=True)
+
+    hhi = sum((holding["weight_pct"] / 100) ** 2 for holding in enriched) * 10000
+    largest_position_pct = max((holding["weight_pct"] for holding in enriched), default=0)
+    largest_sector_pct = max((sector["exposure_pct"] for sector in sector_rows), default=0)
+    earnings_risk_positions = sum(1 for holding in enriched if holding["has_earnings_risk"])
+
+    warnings = []
+    if largest_position_pct > float(limits["max_single_position_pct"]):
+        warnings.append(
+            f"Largest position is {largest_position_pct:.1f}% vs cap {float(limits['max_single_position_pct']):.1f}%"
+        )
+    if largest_sector_pct > float(limits["max_sector_exposure_pct"]):
+        warnings.append(
+            f"Largest sector is {largest_sector_pct:.1f}% vs cap {float(limits['max_sector_exposure_pct']):.1f}%"
+        )
+    if len(enriched) > int(limits["max_positions"]):
+        warnings.append(f"Portfolio has {len(enriched)} positions vs max {int(limits['max_positions'])}")
+    if earnings_risk_positions:
+        warnings.append(
+            f"{earnings_risk_positions} holding(s) have earnings/event risk inside {int(limits['earnings_buffer_days'])} days"
+        )
+    if hhi >= 1800:
+        warnings.append(f"Portfolio concentration is elevated (HHI {hhi:.0f})")
+
+    return {
+        "summary": {
+            "total_value": round(total_value, 2),
+            "position_count": len(enriched),
+            "largest_position_pct": round(largest_position_pct, 2),
+            "largest_sector_pct": round(largest_sector_pct, 2),
+            "concentration_hhi": round(hhi, 0),
+            "earnings_risk_positions": earnings_risk_positions,
+        },
+        "holdings": sorted(enriched, key=lambda row: row["weight_pct"], reverse=True),
+        "sector_exposure": sector_rows,
+        "warnings": warnings,
+        "limits": limits,
+    }
+
+
+def evaluate_new_position(
+    ticker: str,
+    proposed_allocation_pct: float,
+    portfolio_risk: Optional[dict] = None,
+    risk_limits: Optional[dict] = None,
+) -> dict:
+    limits = _merge_risk_limits(risk_limits)
+    snapshot = portfolio_risk or calculate_portfolio_risk(risk_limits=limits)
+    from event_risk import get_earnings_event_risk
+    from watchlist_manager import get_sector_for_stock
+
+    normalized = normalize_ticker(ticker)
+    sector = get_sector_for_stock(normalized) or "Unknown"
+    current_holding = next((row for row in snapshot.get("holdings", []) if row["ticker"] == normalized), None)
+    current_position_pct = float(current_holding["weight_pct"]) if current_holding else 0.0
+    sector_row = next((row for row in snapshot.get("sector_exposure", []) if row["sector"] == sector), None)
+    current_sector_pct = float(sector_row["exposure_pct"]) if sector_row else 0.0
+    event_risk = get_earnings_event_risk(normalized, lookahead_days=int(limits["earnings_buffer_days"]))
+
+    remaining_name_capacity = max(float(limits["max_single_position_pct"]) - current_position_pct, 0.0)
+    remaining_sector_capacity = max(float(limits["max_sector_exposure_pct"]) - current_sector_pct, 0.0)
+    recommended_allocation_pct = min(proposed_allocation_pct, remaining_name_capacity, remaining_sector_capacity)
+
+    flags = []
+    action = "allow"
+
+    if event_risk.should_avoid_new_entries:
+        flags.append(event_risk.flag)
+        action = "avoid"
+    if current_position_pct >= float(limits["max_single_position_pct"]):
+        flags.append(f"Existing position already at {current_position_pct:.1f}%")
+        action = "avoid"
+    elif proposed_allocation_pct > remaining_name_capacity:
+        flags.append(f"Single-name cap leaves {remaining_name_capacity:.1f}% capacity")
+        action = "trim"
+
+    if current_sector_pct >= float(limits["max_sector_exposure_pct"]):
+        flags.append(f"{sector} exposure already at {current_sector_pct:.1f}%")
+        action = "avoid"
+    elif proposed_allocation_pct > remaining_sector_capacity:
+        flags.append(f"{sector} sector cap leaves {remaining_sector_capacity:.1f}% capacity")
+        action = "trim" if action != "avoid" else action
+
+    if snapshot.get("summary", {}).get("position_count", 0) >= int(limits["max_positions"]) and current_holding is None:
+        flags.append(f"Portfolio already has {int(snapshot['summary']['position_count'])} positions")
+        action = "trim" if action != "avoid" else action
+
+    return {
+        "ticker": normalized,
+        "sector": sector,
+        "portfolio_action": action,
+        "portfolio_flags": flags,
+        "recommended_allocation_pct": round(max(recommended_allocation_pct, 0.0), 2),
+        "current_position_pct": round(current_position_pct, 2),
+        "sector_exposure_pct": round(current_sector_pct, 2),
+        "event_risk": event_risk.__dict__,
+        "limits": limits,
+    }
 
 
 def import_from_csv(csv_path: str) -> list[dict]:

@@ -1,6 +1,6 @@
 """Portfolio router - wraps portfolio_analyzer.py and groww_integration.py."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from portfolio_analyzer import (
@@ -8,6 +8,7 @@ from portfolio_analyzer import (
     add_holding,
     remove_holding,
     analyze_portfolio_against_sentiment,
+    calculate_portfolio_risk,
 )
 from dashboard_analytics import get_report_for_date, get_available_dates
 
@@ -50,6 +51,23 @@ async def portfolio_analysis():
         raise HTTPException(status_code=404, detail="No report content")
     result = analyze_portfolio_against_sentiment(report["content"])
     return result
+
+
+@router.get("/risk")
+async def portfolio_risk(
+    max_single_position_pct: float = Query(12.0, ge=1, le=100),
+    max_sector_exposure_pct: float = Query(30.0, ge=1, le=100),
+    max_positions: int = Query(12, ge=1, le=100),
+    earnings_buffer_days: int = Query(7, ge=0, le=30),
+):
+    return calculate_portfolio_risk(
+        risk_limits={
+            "max_single_position_pct": max_single_position_pct,
+            "max_sector_exposure_pct": max_sector_exposure_pct,
+            "max_positions": max_positions,
+            "earnings_buffer_days": earnings_buffer_days,
+        }
+    )
 
 
 @router.get("/groww/holdings")

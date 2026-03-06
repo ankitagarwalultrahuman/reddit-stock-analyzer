@@ -15,6 +15,11 @@ class SwingScanRequest(BaseModel):
     watchlist: str = "NIFTY50"
     min_score: int = 60
     setup_types: Optional[list[str]] = None
+    max_single_position_pct: float = 12.0
+    max_sector_exposure_pct: float = 30.0
+    max_positions: int = 12
+    earnings_buffer_days: int = 7
+    include_portfolio_context: bool = True
 
 
 def _serialize_setup(s):
@@ -43,8 +48,20 @@ def _run_swing_scan(task_id: str, req: SwingScanRequest):
         from swing_screener import run_swing_screener, get_top_swing_setups, get_screener_summary
         from watchlist_manager import get_stocks_from_watchlist
         stocks = get_stocks_from_watchlist(req.watchlist)
-        results = run_swing_screener(stocks=stocks, min_score=req.min_score)
+        risk_limits = {
+            "max_single_position_pct": req.max_single_position_pct,
+            "max_sector_exposure_pct": req.max_sector_exposure_pct,
+            "max_positions": req.max_positions,
+            "earnings_buffer_days": req.earnings_buffer_days,
+        }
+        results = run_swing_screener(
+            stocks=stocks,
+            min_score=req.min_score,
+            risk_limits=risk_limits,
+            include_portfolio_context=req.include_portfolio_context,
+        )
         setups = get_top_swing_setups(results, top_n=20)
+        screener_summary = get_screener_summary(results)
 
         # Build summary
         by_type = {}
@@ -75,6 +92,9 @@ def _run_swing_scan(task_id: str, req: SwingScanRequest):
                     tier: sum(1 for r in results if r.liquidity_tier == tier)
                     for tier in ["institutional", "liquid", "tradable", "illiquid", "unknown"]
                 },
+                "portfolio_actions": screener_summary.get("portfolio_actions", {}),
+                "event_risk_distribution": screener_summary.get("event_risk_distribution", {}),
+                "risk_limits": risk_limits,
             },
         })
     except Exception as e:

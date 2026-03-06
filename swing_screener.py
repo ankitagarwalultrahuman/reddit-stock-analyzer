@@ -12,7 +12,7 @@ Identifies swing trading opportunities based on:
 
 import pandas as pd
 from datetime import datetime, timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
@@ -20,6 +20,7 @@ from enum import Enum
 from stock_history import fetch_stock_history, get_current_price
 from technical_analysis import get_technical_analysis
 from watchlist_manager import NIFTY50_STOCKS, NIFTY100_STOCKS, SECTOR_STOCKS, get_sector_for_stock
+from event_risk import get_earnings_event_risk
 from market_utils import (
     calculate_average_traded_value,
     average_traded_value_cr,
@@ -30,6 +31,7 @@ from market_utils import (
     nearest_support_resistance,
     position_allocation_pct,
 )
+from portfolio_analyzer import calculate_portfolio_risk, evaluate_new_position
 from config import (
     SWING_VOLUME_THRESHOLD, SWING_RISK_REWARD_MIN,
     SR_CLUSTER_THRESHOLD_PCT, SR_PIVOT_PERIOD, SR_TOUCH_COUNT_MIN,
@@ -69,6 +71,14 @@ class SwingSetup:
     holding_window: str
     stop_distance_pct: float
     capital_allocation_pct: float
+    recommended_allocation_pct: float = 0.0
+    portfolio_action: str = "allow"
+    portfolio_flags: list[str] = field(default_factory=list)
+    sector_exposure_pct: float = 0.0
+    current_position_pct: float = 0.0
+    event_risk_level: str = "unknown"
+    event_date: Optional[str] = None
+    days_to_event: Optional[int] = None
 
 
 @dataclass
@@ -97,6 +107,14 @@ class ScreenerResult:
     week_52_low: float = 0.0
     pct_from_52w_high: float = 0.0
     near_52w_high: bool = False
+    event_risk_level: str = "unknown"
+    event_date: Optional[str] = None
+    days_to_event: Optional[int] = None
+    portfolio_action: str = "allow"
+    recommended_allocation_pct: float = 0.0
+    portfolio_flags: list[str] = field(default_factory=list)
+    sector_exposure_pct: float = 0.0
+    current_position_pct: float = 0.0
 
 
 def _cluster_levels(levels: list[float], threshold_pct: float = SR_CLUSTER_THRESHOLD_PCT) -> list[tuple[float, int]]:
@@ -898,7 +916,11 @@ def _calculate_weighted_confidence(signals: list[str], weight_map: dict) -> int:
     return max(1, min(int(total_weight), 10))
 
 
-def screen_stock(ticker: str) -> Optional[ScreenerResult]:
+def screen_stock(
+    ticker: str,
+    portfolio_risk: Optional[dict] = None,
+    risk_limits: Optional[dict] = None,
+) -> Optional[ScreenerResult]:
     """Screen a single stock for swing setups."""
     try:
         # Get historical data (250 days for reliable EMA-200, Fibonacci, etc.)
@@ -1018,6 +1040,28 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
         # Filter out setups below minimum risk:reward ratio
         setups = [s for s in setups if s.risk_reward >= SWING_RISK_REWARD_MIN]
 
+        event_risk = get_earnings_event_risk(
+            ticker,
+            lookahead_days=int((risk_limits or {}).get("earnings_buffer_days", 7)),
+        )
+        candidate_reviews = []
+        for setup in setups:
+            candidate = evaluate_new_position(
+                ticker,
+                proposed_allocation_pct=setup.capital_allocation_pct,
+                portfolio_risk=portfolio_risk,
+                risk_limits=risk_limits,
+            )
+            setup.recommended_allocation_pct = candidate["recommended_allocation_pct"]
+            setup.portfolio_action = candidate["portfolio_action"]
+            setup.portfolio_flags = candidate["portfolio_flags"]
+            setup.sector_exposure_pct = candidate["sector_exposure_pct"]
+            setup.current_position_pct = candidate["current_position_pct"]
+            setup.event_risk_level = event_risk.risk_level
+            setup.event_date = event_risk.event_date
+            setup.days_to_event = event_risk.days_to_event
+            candidate_reviews.append(candidate)
+
         # Calculate total score (normalized to 0-100)
         total_score = technical_score  # Already 0-100
         if setups:
@@ -1033,12 +1077,18 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
 
         if liquidity_tier == "illiquid":
             total_score = max(total_score - 10, 0)
+        if event_risk.should_avoid_new_entries:
+            total_score = max(total_score - 15, 0)
+        elif event_risk.risk_level in {"high", "elevated", "watch"}:
+            total_score = max(total_score - 7, 0)
 
         primary_setup = ""
+        primary_review = None
         if setups:
             ranked_setups = sorted(
                 setups,
                 key=lambda item: (
+                    item.portfolio_action == "allow",
                     item.regime in ("momentum", "momentum_breakout", "trend_pullback"),
                     item.confidence_score,
                     item.risk_reward,
@@ -1046,6 +1096,23 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
                 reverse=True,
             )
             primary_setup = ranked_setups[0].setup_type.value
+            primary_review = evaluate_new_position(
+                ticker,
+                proposed_allocation_pct=ranked_setups[0].capital_allocation_pct,
+                portfolio_risk=portfolio_risk,
+                risk_limits=risk_limits,
+            )
+
+        portfolio_action = primary_review["portfolio_action"] if primary_review else "allow"
+        portfolio_flags = primary_review["portfolio_flags"] if primary_review else []
+        recommended_allocation_pct = primary_review["recommended_allocation_pct"] if primary_review else 0.0
+        sector_exposure_pct = primary_review["sector_exposure_pct"] if primary_review else 0.0
+        current_position_pct = primary_review["current_position_pct"] if primary_review else 0.0
+
+        if portfolio_action == "avoid":
+            total_score = max(total_score - 15, 0)
+        elif portfolio_action == "trim":
+            total_score = max(total_score - 6, 0)
 
         return ScreenerResult(
             ticker=ticker,
@@ -1070,7 +1137,15 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
             week_52_high=tech.week_52_high or 0.0,
             week_52_low=tech.week_52_low or 0.0,
             pct_from_52w_high=tech.pct_from_52w_high or 0.0,
-            near_52w_high=tech.near_52w_high or False
+            near_52w_high=tech.near_52w_high or False,
+            event_risk_level=event_risk.risk_level,
+            event_date=event_risk.event_date,
+            days_to_event=event_risk.days_to_event,
+            portfolio_action=portfolio_action,
+            recommended_allocation_pct=recommended_allocation_pct,
+            portfolio_flags=portfolio_flags,
+            sector_exposure_pct=sector_exposure_pct,
+            current_position_pct=current_position_pct,
         )
 
     except Exception as e:
@@ -1082,7 +1157,9 @@ def run_swing_screener(
     stocks: list[str] = None,
     min_score: int = 60,
     setup_types: list[SwingSetupType] = None,
-    max_workers: int = 5
+    max_workers: int = 5,
+    risk_limits: Optional[dict] = None,
+    include_portfolio_context: bool = True,
 ) -> list[ScreenerResult]:
     """
     Run swing screener on a list of stocks.
@@ -1100,10 +1177,14 @@ def run_swing_screener(
         stocks = NIFTY100_STOCKS
 
     print(f"Screening {len(stocks)} stocks for swing setups...")
+    portfolio_risk = calculate_portfolio_risk(risk_limits=risk_limits) if include_portfolio_context else None
 
     results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(screen_stock, ticker): ticker for ticker in stocks}
+        futures = {
+            executor.submit(screen_stock, ticker, portfolio_risk, risk_limits): ticker
+            for ticker in stocks
+        }
         for future in as_completed(futures):
             result = future.result()
             if result and result.total_score >= min_score:
@@ -1158,6 +1239,14 @@ def get_screener_summary(results: list[ScreenerResult]) -> dict:
         "liquidity_distribution": {
             tier: sum(1 for r in results if r.liquidity_tier == tier)
             for tier in ["institutional", "liquid", "tradable", "illiquid", "unknown"]
+        },
+        "portfolio_actions": {
+            action: sum(1 for r in results if r.portfolio_action == action)
+            for action in ["allow", "trim", "avoid"]
+        },
+        "event_risk_distribution": {
+            level: sum(1 for r in results if r.event_risk_level == level)
+            for level in ["critical", "high", "elevated", "watch", "monitor", "none", "unknown"]
         },
     }
 

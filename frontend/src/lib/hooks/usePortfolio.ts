@@ -35,6 +35,19 @@ export function usePortfolioAnalysis() {
   });
 }
 
+export function usePortfolioRisk(params?: {
+  max_single_position_pct?: number;
+  max_sector_exposure_pct?: number;
+  max_positions?: number;
+  earnings_buffer_days?: number;
+}) {
+  return useQuery({
+    queryKey: ["portfolioRisk", params],
+    queryFn: () => api.getPortfolioRisk(params),
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
 export function useGrowwHoldings() {
   return useQuery({
     queryKey: ["growwHoldings"],
