@@ -24,7 +24,8 @@ const QUICK_SCANS = [
   { label: "Oversold Reversals", strategy: "oversold_reversal" },
   { label: "Strong Buy", strategy: "bullish_confluence" },
   { label: "Bearish Alerts", strategy: "bearish_confluence" },
-  { label: "Breakout", strategy: "breakout" },
+  { label: "Breakout Leaders", strategy: "breakout_leaders" },
+  { label: "Trend Pullback", strategy: "trend_pullback" },
 ];
 
 export default function ScannerPage() {
@@ -159,6 +160,12 @@ export default function ScannerPage() {
               </Card>
               <Card>
                 <CardContent className="pt-6">
+                  <p className="text-sm text-muted-foreground">Avg Matches</p>
+                  <p className="text-2xl font-bold">{summary.avg_matches ?? 0}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
                   <p className="text-sm text-muted-foreground">Bias Distribution</p>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {Object.entries(summary.bias_distribution ?? {}).map(([bias, count]) => (
@@ -192,7 +199,9 @@ export default function ScannerPage() {
                         <th className="pb-2 font-medium text-right">RSI</th>
                         <th className="pb-2 font-medium">MACD</th>
                         <th className="pb-2 font-medium">MA Trend</th>
+                        <th className="pb-2 font-medium">Liquidity</th>
                         <th className="pb-2 font-medium">Volume</th>
+                        <th className="pb-2 font-medium text-right">Matches</th>
                         <th className="pb-2 font-medium text-right">Score</th>
                         <th className="pb-2 font-medium">Bias</th>
                         <th className="pb-2 font-medium">Matched</th>
@@ -214,7 +223,13 @@ export default function ScannerPage() {
                             <td className="text-right">{r.rsi?.toFixed(1) ?? "N/A"}</td>
                             <td>{r.macd_trend ?? "N/A"}</td>
                             <td>{r.ma_trend ?? "N/A"}</td>
+                            <td>
+                              <Badge variant={r.liquidity_tier === "illiquid" ? "bearish" : r.liquidity_tier === "tradable" ? "neutral" : "bullish"}>
+                                {r.liquidity_tier ?? "N/A"}
+                              </Badge>
+                            </td>
                             <td>{r.volume_signal ?? "N/A"}</td>
+                            <td className="text-right font-semibold">{r.matched_count ?? 0}</td>
                             <td className="text-right font-semibold">{r.score}</td>
                             <td>
                               <Badge
@@ -244,7 +259,7 @@ export default function ScannerPage() {
                           </tr>
                           {expandedRow === r.ticker && (
                             <tr key={`${r.ticker}-detail`} className="border-b bg-muted/30">
-                              <td colSpan={10} className="p-4">
+                              <td colSpan={12} className="p-4">
                                 <div className="space-y-2">
                                   <p className="text-sm font-medium">Matched Criteria:</p>
                                   <div className="flex flex-wrap gap-2">
@@ -257,6 +272,9 @@ export default function ScannerPage() {
                                     <div><span className="text-muted-foreground">MACD:</span> {r.macd_trend}</div>
                                     <div><span className="text-muted-foreground">MA Trend:</span> {r.ma_trend}</div>
                                     <div><span className="text-muted-foreground">Volume:</span> {r.volume_signal}</div>
+                                    <div><span className="text-muted-foreground">Liquidity:</span> {r.liquidity_tier}</div>
+                                    <div><span className="text-muted-foreground">ADV:</span> {r.avg_traded_value_cr ? `₹${r.avg_traded_value_cr} Cr` : "N/A"}</div>
+                                    <div><span className="text-muted-foreground">Matches:</span> {r.matched_count ?? 0}</div>
                                     <div><span className="text-muted-foreground">Score:</span> {r.score}</div>
                                     <div><span className="text-muted-foreground">Bias:</span> {r.technical_bias}</div>
                                   </div>
@@ -282,19 +300,24 @@ interface ScreenerResult {
   ticker: string;
   current_price: number;
   matched_criteria: string[];
+  matched_count: number;
   score: number;
   rsi: number;
   macd_trend: string;
   ma_trend: string;
   volume_signal: string;
   technical_bias: string;
+  avg_traded_value_cr?: number;
+  liquidity_tier?: string;
 }
 
 interface ScanSummary {
   total_scanned: number;
   matched: number;
   avg_score: number;
+  avg_matches?: number;
   bias_distribution: Record<string, number>;
+  liquidity_distribution?: Record<string, number>;
 }
 
 interface ScanResponse {

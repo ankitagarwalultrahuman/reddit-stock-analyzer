@@ -730,11 +730,23 @@ def calculate_technical_score(signals: TechnicalSignals) -> tuple:
     elif signals.stoch_rsi_signal == "overbought" or signals.stoch_rsi_signal == "bearish_cross":
         score -= 8
 
-    # 52-week proximity bonus
-    if signals.near_52w_low:
-        score += 5  # Potential value buy
-    elif signals.near_52w_high:
-        score -= 3  # Near highs, but breakout possible so smaller penalty
+    # 52-week proximity contribution
+    # For Indian swing trading, near-high strength in bullish trends is usually
+    # constructive, while near-lows in bearish trends are usually risk, not value.
+    if signals.near_52w_high:
+        if signals.ma_trend == "bullish":
+            score += 6
+        elif signals.ma_trend == "mixed":
+            score += 2
+        else:
+            score -= 4
+    elif signals.near_52w_low:
+        if signals.ma_trend == "bearish":
+            score -= 6
+        elif signals.ma_trend == "mixed":
+            score -= 2
+        else:
+            score += 2
 
     # Clamp to 0-100
     score = max(0, min(100, score))

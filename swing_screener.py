@@ -20,6 +20,16 @@ from enum import Enum
 from stock_history import fetch_stock_history, get_current_price
 from technical_analysis import get_technical_analysis
 from watchlist_manager import NIFTY50_STOCKS, NIFTY100_STOCKS, SECTOR_STOCKS, get_sector_for_stock
+from market_utils import (
+    calculate_average_traded_value,
+    average_traded_value_cr,
+    calculate_relative_strength_aligned,
+    calculate_relative_volume,
+    find_support_resistance_levels as find_clustered_levels,
+    liquidity_tier_from_adv,
+    nearest_support_resistance,
+    position_allocation_pct,
+)
 from config import (
     SWING_VOLUME_THRESHOLD, SWING_RISK_REWARD_MIN,
     SR_CLUSTER_THRESHOLD_PCT, SR_PIVOT_PERIOD, SR_TOUCH_COUNT_MIN,
@@ -45,6 +55,7 @@ class SwingSetup:
     ticker: str
     sector: str
     setup_type: SwingSetupType
+    regime: str
     current_price: float
     entry_zone: tuple[float, float]  # (low, high) for entry
     stop_loss: float
@@ -55,6 +66,9 @@ class SwingSetup:
     signals: list[str]  # List of bullish/bearish signals
     technical_summary: dict
     relative_strength: float
+    holding_window: str
+    stop_distance_pct: float
+    capital_allocation_pct: float
 
 
 @dataclass
@@ -75,6 +89,9 @@ class ScreenerResult:
     resistance: float
     setups: list[SwingSetup]
     total_score: int  # Aggregate score
+    avg_traded_value_cr: float = 0.0
+    liquidity_tier: str = "unknown"
+    primary_setup: str = ""
     # 52-week high/low data
     week_52_high: float = 0.0
     week_52_low: float = 0.0
@@ -207,29 +224,7 @@ def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 60) -> dict:
 
 def calculate_relative_strength(ticker: str, days: int = RS_LOOKBACK_DAYS) -> float:
     """Calculate relative strength vs NIFTY."""
-    try:
-        import yfinance as yf
-
-        # Stock data
-        stock_df = fetch_stock_history(ticker, days=days + 10)
-        if stock_df.empty or len(stock_df) < 5:
-            return 0.0
-
-        # NIFTY data
-        nifty = yf.Ticker("^NSEI")
-        nifty_df = nifty.history(period=f"{days + 10}d")
-
-        if nifty_df.empty or len(nifty_df) < 5:
-            return 0.0
-
-        # Calculate returns
-        stock_return = ((stock_df['Close'].iloc[-1] / stock_df['Close'].iloc[0]) - 1) * 100
-        nifty_return = ((nifty_df['Close'].iloc[-1] / nifty_df['Close'].iloc[0]) - 1) * 100
-
-        return round(stock_return - nifty_return, 2)
-
-    except Exception:
-        return 0.0
+    return calculate_relative_strength_aligned(ticker, days=days, force_refresh=True)
 
 
 def detect_oversold_bounce_setup(
@@ -295,11 +290,14 @@ def detect_oversold_bounce_setup(
     # ATR-based entry zone
     entry_low = current_price - 0.5 * atr
     entry_high = current_price + 0.5 * atr
+    stop_distance_pct = abs(current_price - stop_loss) / current_price * 100 if current_price else 0
+    capital_allocation_pct = position_allocation_pct(current_price, stop_loss)
 
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.OVERSOLD_BOUNCE,
+        regime="reversal",
         current_price=current_price,
         entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
@@ -309,7 +307,10 @@ def detect_oversold_bounce_setup(
         confidence_score=confidence,
         signals=signals,
         technical_summary={"rsi": rsi, "macd": macd_signal},
-        relative_strength=0
+        relative_strength=0,
+        holding_window="3-10 sessions",
+        stop_distance_pct=round(stop_distance_pct, 2),
+        capital_allocation_pct=capital_allocation_pct,
     )
 
 
@@ -375,11 +376,14 @@ def detect_pullback_to_ema_setup(
     anchor = ema20 if near_ema20 else ema50
     entry_low = anchor - 0.3 * atr
     entry_high = anchor + 0.5 * atr
+    stop_distance_pct = abs(current_price - stop_loss) / current_price * 100 if current_price else 0
+    capital_allocation_pct = position_allocation_pct(current_price, stop_loss)
 
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.PULLBACK_TO_EMA,
+        regime="trend_pullback",
         current_price=current_price,
         entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
@@ -389,7 +393,10 @@ def detect_pullback_to_ema_setup(
         confidence_score=confidence,
         signals=signals,
         technical_summary={"ema20": ema20, "ema50": ema50, "rsi": rsi},
-        relative_strength=0
+        relative_strength=0,
+        holding_window="5-15 sessions",
+        stop_distance_pct=round(stop_distance_pct, 2),
+        capital_allocation_pct=capital_allocation_pct,
     )
 
 
@@ -459,11 +466,14 @@ def detect_breakout_setup(
     # Entry zone near breakout level
     entry_low = breaking_resistance - 0.2 * atr
     entry_high = breaking_resistance + 0.8 * atr
+    stop_distance_pct = abs(current_price - stop_loss) / current_price * 100 if current_price else 0
+    capital_allocation_pct = position_allocation_pct(current_price, stop_loss)
 
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.BREAKOUT,
+        regime="momentum_breakout",
         current_price=current_price,
         entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
@@ -473,7 +483,10 @@ def detect_breakout_setup(
         confidence_score=confidence,
         signals=signals,
         technical_summary={"resistance": breaking_resistance, "volume": volume_ratio},
-        relative_strength=0
+        relative_strength=0,
+        holding_window="5-20 sessions",
+        stop_distance_pct=round(stop_distance_pct, 2),
+        capital_allocation_pct=capital_allocation_pct,
     )
 
 
@@ -548,11 +561,14 @@ def detect_momentum_continuation_setup(
     # ATR-based entry zone
     entry_low = current_price - 0.3 * atr
     entry_high = current_price + 0.5 * atr
+    stop_distance_pct = abs(current_price - stop_loss) / current_price * 100 if current_price else 0
+    capital_allocation_pct = position_allocation_pct(current_price, stop_loss)
 
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.MOMENTUM_CONTINUATION,
+        regime="momentum",
         current_price=current_price,
         entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
@@ -562,7 +578,10 @@ def detect_momentum_continuation_setup(
         confidence_score=confidence,
         signals=signals,
         technical_summary={"adx": tech.adx, "rsi": rsi, "ma_trend": "bullish"},
-        relative_strength=rs
+        relative_strength=rs,
+        holding_window="5-20 sessions",
+        stop_distance_pct=round(stop_distance_pct, 2),
+        capital_allocation_pct=capital_allocation_pct,
     )
 
 
@@ -640,11 +659,14 @@ def detect_mean_reversion_setup(
     # ATR-based entry zone
     entry_low = current_price - 0.5 * atr
     entry_high = current_price + 0.5 * atr
+    stop_distance_pct = abs(current_price - stop_loss) / current_price * 100 if current_price else 0
+    capital_allocation_pct = position_allocation_pct(current_price, stop_loss)
 
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.MEAN_REVERSION,
+        regime="mean_reversion",
         current_price=current_price,
         entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
@@ -654,7 +676,10 @@ def detect_mean_reversion_setup(
         confidence_score=confidence,
         signals=signals,
         technical_summary={"rsi": rsi, "bb_position": tech.bb_position, "divergence": tech.divergence},
-        relative_strength=rs
+        relative_strength=rs,
+        holding_window="2-8 sessions",
+        stop_distance_pct=round(stop_distance_pct, 2),
+        capital_allocation_pct=capital_allocation_pct,
     )
 
 
@@ -729,11 +754,14 @@ def detect_breakdown_setup(
     # ATR-based entry zone
     entry_low = current_price - 0.5 * atr
     entry_high = current_price + 0.3 * atr
+    stop_distance_pct = abs(current_price - stop_loss) / current_price * 100 if current_price else 0
+    capital_allocation_pct = position_allocation_pct(current_price, stop_loss)
 
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.BREAKDOWN,
+        regime="bearish_warning",
         current_price=current_price,
         entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
@@ -743,7 +771,10 @@ def detect_breakdown_setup(
         confidence_score=confidence,
         signals=signals,
         technical_summary={"support": breaking_support, "volume": volume_ratio, "rsi": rsi},
-        relative_strength=rs
+        relative_strength=rs,
+        holding_window="3-10 sessions",
+        stop_distance_pct=round(stop_distance_pct, 2),
+        capital_allocation_pct=capital_allocation_pct,
     )
 
 
@@ -825,11 +856,14 @@ def detect_52w_high_breakout_setup(
     # Entry zone near the 52W high level
     entry_low = week_52_high - 0.3 * atr
     entry_high = week_52_high + 1.0 * atr
+    stop_distance_pct = abs(current_price - stop_loss) / current_price * 100 if current_price else 0
+    capital_allocation_pct = position_allocation_pct(current_price, stop_loss)
 
     return SwingSetup(
         ticker=ticker,
         sector=get_sector_for_stock(ticker) or "Unknown",
         setup_type=SwingSetupType.BREAKOUT,  # Subtype of breakout
+        regime="momentum_breakout",
         current_price=current_price,
         entry_zone=(round(entry_low, 2), round(entry_high, 2)),
         stop_loss=round(stop_loss, 2),
@@ -839,7 +873,10 @@ def detect_52w_high_breakout_setup(
         confidence_score=confidence,
         signals=signals,
         technical_summary={"week_52_high": week_52_high, "pct_from_high": round(pct_from_high, 2), "volume": volume_ratio},
-        relative_strength=rs
+        relative_strength=rs,
+        holding_window="5-20 sessions",
+        stop_distance_pct=round(stop_distance_pct, 2),
+        capital_allocation_pct=capital_allocation_pct,
     )
 
 
@@ -882,12 +919,11 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
             week_ago = float(df['Close'].iloc[-5])
             week_change = ((current_price - week_ago) / week_ago) * 100
 
-        # Volume ratio
-        volume_ratio = 1.0
-        if 'Volume' in df.columns:
-            current_vol = float(df['Volume'].iloc[-1])
-            avg_vol = float(df['Volume'].tail(20).mean())
-            volume_ratio = current_vol / avg_vol if avg_vol > 0 else 1.0
+        # Liquidity and volume quality
+        volume_ratio = calculate_relative_volume(df, recent_period=5, base_period=20)
+        avg_traded_value = calculate_average_traded_value(df)
+        avg_traded_value_cr = average_traded_value_cr(avg_traded_value) or 0.0
+        liquidity_tier = liquidity_tier_from_adv(avg_traded_value)
 
         # Technical analysis - pass the DataFrame we already have
         tech = get_technical_analysis(df, ticker)
@@ -902,9 +938,8 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
         technical_score = tech.technical_score or 50
 
         # Support/Resistance
-        supports, resistances = find_support_resistance_levels(df)
-        support = supports[0] if supports else 0
-        resistance = resistances[0] if resistances else 0
+        supports, resistances = find_clustered_levels(df)
+        support, resistance = nearest_support_resistance(current_price, supports, resistances)
 
         # Relative strength
         rs = calculate_relative_strength(ticker)
@@ -987,12 +1022,30 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
         total_score = technical_score  # Already 0-100
         if setups:
             setup_bonus = max(s.confidence_score for s in setups) * 3  # max 30
-            rs_bonus = min(rs * 2, 10) if rs > 0 else 0
-            total_score = min(int(technical_score * 0.6 + setup_bonus + rs_bonus), 100)
+            rs_bonus = min(rs * 1.5, 10) if rs > 0 else max(rs, -8)
+            regime_bonus = 8 if any(s.regime in ("momentum", "momentum_breakout", "trend_pullback") for s in setups) else 0
+            liquidity_bonus = 6 if liquidity_tier == "institutional" else 3 if liquidity_tier == "liquid" else -8 if liquidity_tier == "illiquid" else 0
+            total_score = min(max(int(technical_score * 0.55 + setup_bonus + rs_bonus + regime_bonus + liquidity_bonus), 0), 100)
         elif rs > 5:
             total_score = min(technical_score + 10, 100)
         elif rs > 0:
             total_score = min(technical_score + 5, 100)
+
+        if liquidity_tier == "illiquid":
+            total_score = max(total_score - 10, 0)
+
+        primary_setup = ""
+        if setups:
+            ranked_setups = sorted(
+                setups,
+                key=lambda item: (
+                    item.regime in ("momentum", "momentum_breakout", "trend_pullback"),
+                    item.confidence_score,
+                    item.risk_reward,
+                ),
+                reverse=True,
+            )
+            primary_setup = ranked_setups[0].setup_type.value
 
         return ScreenerResult(
             ticker=ticker,
@@ -1010,6 +1063,9 @@ def screen_stock(ticker: str) -> Optional[ScreenerResult]:
             resistance=resistance,
             setups=setups,
             total_score=total_score,
+            avg_traded_value_cr=avg_traded_value_cr,
+            liquidity_tier=liquidity_tier,
+            primary_setup=primary_setup,
             # 52-week high/low from technical analysis
             week_52_high=tech.week_52_high or 0.0,
             week_52_low=tech.week_52_low or 0.0,
@@ -1098,7 +1154,11 @@ def get_screener_summary(results: list[ScreenerResult]) -> dict:
         "setup_breakdown": setup_counts,
         "sectors_represented": sectors,
         "avg_score": sum(r.total_score for r in results) / len(results),
-        "avg_rs": sum(r.relative_strength for r in results) / len(results)
+        "avg_rs": sum(r.relative_strength for r in results) / len(results),
+        "liquidity_distribution": {
+            tier: sum(1 for r in results if r.liquidity_tier == tier)
+            for tier in ["institutional", "liquid", "tradable", "illiquid", "unknown"]
+        },
     }
 
 

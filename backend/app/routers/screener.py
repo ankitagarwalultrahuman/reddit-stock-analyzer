@@ -46,7 +46,12 @@ def _run_scan(task_id: str, req: ScanRequest):
             "total_scanned": total_stocks,
             "matched": len(results),
             "avg_score": round(sum(r.score for r in results) / len(results), 1) if results else 0,
+            "avg_matches": round(sum(r.matched_count for r in results) / len(results), 1) if results else 0,
             "bias_distribution": bias_counts,
+            "liquidity_distribution": {
+                tier: sum(1 for r in results if r.liquidity_tier == tier)
+                for tier in ["institutional", "liquid", "tradable", "illiquid", "unknown"]
+            },
         }
 
         task_store.complete(task_id, {

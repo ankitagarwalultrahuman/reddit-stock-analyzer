@@ -17,6 +17,7 @@ from watchlist_manager import get_watchlist, get_stocks_from_watchlist, NIFTY50_
 from stock_history import fetch_stock_history
 from technical_analysis import get_technical_analysis, TechnicalSignals
 from config import SCREENER_RSI_OVERSOLD, SCREENER_RSI_OVERBOUGHT, SWING_VOLUME_THRESHOLD, ADX_STRONG_TREND
+from market_utils import calculate_average_traded_value, average_traded_value_cr, liquidity_tier_from_adv
 
 
 @dataclass
@@ -25,6 +26,7 @@ class ScreenerResult:
     ticker: str
     current_price: float
     matched_criteria: list[str]
+    matched_count: int
     score: int  # Higher = more criteria matched
     signals: Optional[TechnicalSignals] = None
 
@@ -34,6 +36,8 @@ class ScreenerResult:
     ma_trend: Optional[str] = None
     volume_signal: Optional[str] = None
     technical_bias: Optional[str] = None
+    avg_traded_value_cr: Optional[float] = None
+    liquidity_tier: str = "unknown"
 
 
 @dataclass
@@ -188,6 +192,20 @@ def filter_stoch_rsi_oversold(signals: TechnicalSignals) -> tuple[bool, str]:
     return False, ""
 
 
+def filter_near_52w_high(signals: TechnicalSignals) -> tuple[bool, str]:
+    """Price near 52-week high in a non-bearish structure."""
+    if signals.near_52w_high and signals.ma_trend != "bearish":
+        return True, "Near 52-week high"
+    return False, ""
+
+
+def filter_near_52w_low(signals: TechnicalSignals) -> tuple[bool, str]:
+    """Price near 52-week low."""
+    if signals.near_52w_low:
+        return True, "Near 52-week low"
+    return False, ""
+
+
 # =============================================================================
 # PRE-BUILT STRATEGIES
 # =============================================================================
@@ -288,6 +306,26 @@ STRATEGIES = {
         description="ADX strong trend + MACD bullish + high volume",
         filters=[filter_strong_trend, filter_macd_bullish, filter_high_volume],
     ),
+    "bullish_confluence": ScreenerStrategy(
+        name="Bullish Confluence",
+        description="Bullish trend, momentum, volume, and relative strength to highs",
+        filters=[filter_ma_trend_bullish, filter_macd_bullish, filter_high_volume, filter_near_52w_high],
+    ),
+    "bearish_confluence": ScreenerStrategy(
+        name="Bearish Confluence",
+        description="Bearish trend, bearish MACD, and stress near lows",
+        filters=[filter_ma_trend_bearish, filter_macd_bearish, filter_near_52w_low],
+    ),
+    "trend_pullback": ScreenerStrategy(
+        name="Trend Pullback",
+        description="Bullish trend with pullback near support for continuation entries",
+        filters=[filter_ma_trend_bullish, filter_price_above_ema50, filter_near_bollinger_lower],
+    ),
+    "breakout_leaders": ScreenerStrategy(
+        name="Breakout Leaders",
+        description="Near highs with volume and strong trend confirmation",
+        filters=[filter_near_52w_high, filter_high_volume, filter_strong_trend, filter_macd_bullish],
+    ),
     "deep_value": ScreenerStrategy(
         name="Deep Value",
         description="Stochastic RSI oversold + near lower BB + bullish divergence",
@@ -317,7 +355,7 @@ def get_strategy(name: str) -> Optional[ScreenerStrategy]:
 # SCREENING ENGINE
 # =============================================================================
 
-def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) -> Optional[ScreenerResult]:
+def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False, force_refresh: bool = True) -> Optional[ScreenerResult]:
     """
     Scan a single stock against filters.
 
@@ -331,7 +369,7 @@ def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) 
     """
     try:
         # Fetch price data
-        df = fetch_stock_history(ticker, days=60)
+        df = fetch_stock_history(ticker, days=90, force_refresh=force_refresh)
         if df.empty:
             return None
 
@@ -339,6 +377,10 @@ def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) 
         signals = get_technical_analysis(df, ticker)
         if signals.current_price == 0:
             return None
+
+        avg_traded_value = calculate_average_traded_value(df)
+        liquidity_tier = liquidity_tier_from_adv(avg_traded_value)
+        adv_cr = average_traded_value_cr(avg_traded_value)
 
         # Apply filters
         matched = []
@@ -359,6 +401,7 @@ def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) 
                 ticker=ticker,
                 current_price=signals.current_price,
                 matched_criteria=matched,
+                matched_count=0,
                 score=signals.technical_score or 50,  # Use tech score for sorting
                 signals=signals,
                 rsi=signals.rsi,
@@ -366,6 +409,8 @@ def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) 
                 ma_trend=signals.ma_trend,
                 volume_signal=signals.volume_signal,
                 technical_bias=signals.technical_bias,
+                avg_traded_value_cr=adv_cr,
+                liquidity_tier=liquidity_tier,
             )
 
         if not matched:
@@ -373,13 +418,16 @@ def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) 
 
         # Normalized scoring: use technical_score as base, with match bonus
         base_score = signals.technical_score or 50
-        match_bonus = len(matched) * 5
-        normalized_score = min(base_score + match_bonus, 100)
+        match_count = len(matched)
+        match_bonus = match_count * 6
+        liquidity_bonus = 5 if liquidity_tier == "institutional" else 2 if liquidity_tier == "liquid" else -6 if liquidity_tier == "illiquid" else 0
+        normalized_score = max(0, min(base_score + match_bonus + liquidity_bonus, 100))
 
         return ScreenerResult(
             ticker=ticker,
             current_price=signals.current_price,
             matched_criteria=matched,
+            matched_count=match_count,
             score=normalized_score,
             signals=signals,
             rsi=signals.rsi,
@@ -387,6 +435,8 @@ def scan_stock(ticker: str, filters: list[Callable], include_all: bool = False) 
             ma_trend=signals.ma_trend,
             volume_signal=signals.volume_signal,
             technical_bias=signals.technical_bias,
+            avg_traded_value_cr=adv_cr,
+            liquidity_tier=liquidity_tier,
         )
 
     except Exception as e:
@@ -400,6 +450,7 @@ def scan_watchlist(
     custom_filters: list[Callable] = None,
     min_matches: int = 1,
     max_workers: int = 5,
+    force_refresh: bool = True,
 ) -> list[ScreenerResult]:
     """
     Scan all stocks in a watchlist.
@@ -438,13 +489,13 @@ def scan_watchlist(
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_ticker = {
-            executor.submit(scan_stock, ticker, filters): ticker
+            executor.submit(scan_stock, ticker, filters, False, force_refresh): ticker
             for ticker in stocks
         }
 
         for future in concurrent.futures.as_completed(future_to_ticker):
             result = future.result()
-            if result and result.score >= min_matches:
+            if result and (result.matched_count >= min_matches or result.matched_count == 0):
                 results.append(result)
 
     # Sort by score (most matches first)
@@ -459,6 +510,7 @@ def scan_stocks(
     custom_filters: list[Callable] = None,
     min_matches: int = 1,
     max_workers: int = 5,
+    force_refresh: bool = True,
 ) -> list[ScreenerResult]:
     """
     Scan a list of stocks directly.
@@ -492,7 +544,7 @@ def scan_stocks(
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_ticker = {
-            executor.submit(scan_stock, ticker, filters, include_all): ticker
+            executor.submit(scan_stock, ticker, filters, include_all, force_refresh): ticker
             for ticker in stocks
         }
 
@@ -500,7 +552,7 @@ def scan_stocks(
             result = future.result()
             if result:
                 # For full scan, include all; otherwise check min_matches
-                if include_all or result.score >= min_matches:
+                if include_all or result.matched_count >= min_matches:
                     results.append(result)
 
     results.sort(key=lambda x: x.score, reverse=True)

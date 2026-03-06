@@ -19,6 +19,12 @@ from stock_history import fetch_stock_history, get_current_price
 from technical_analysis import get_technical_analysis, TechnicalSignals
 from sector_tracker import analyze_all_sectors, SectorMetrics
 from watchlist_manager import NIFTY50_STOCKS, SECTOR_STOCKS, get_sector_for_stock
+from market_utils import (
+    calculate_relative_strength_aligned,
+    calculate_relative_volume,
+    find_support_resistance_levels,
+    nearest_support_resistance,
+)
 from config import SCREENER_RSI_OVERSOLD, RSI_OVERBOUGHT, RS_LOOKBACK_DAYS, RS_BENCHMARK
 
 
@@ -96,33 +102,7 @@ def calculate_relative_strength(ticker: str, benchmark_ticker: str = RS_BENCHMAR
     Returns:
         RS value > 0 means outperforming, < 0 means underperforming
     """
-    try:
-        import yfinance as yf
-
-        # Get stock data (extra buffer for trading holidays)
-        stock_df = fetch_stock_history(ticker, days=days + 10)
-        if stock_df.empty or len(stock_df) < days:
-            return 0.0
-
-        # Get benchmark data
-        benchmark = yf.Ticker(benchmark_ticker)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days + 10)
-        benchmark_df = benchmark.history(start=start_date, end=end_date)
-
-        if benchmark_df.empty or len(benchmark_df) < days:
-            return 0.0
-
-        # Calculate returns for the period
-        stock_return = ((stock_df['Close'].iloc[-1] / stock_df['Close'].iloc[0]) - 1) * 100
-        benchmark_return = ((benchmark_df['Close'].iloc[-1] / benchmark_df['Close'].iloc[0]) - 1) * 100
-
-        # Relative strength = stock return - benchmark return
-        return round(stock_return - benchmark_return, 2)
-
-    except Exception as e:
-        print(f"Error calculating RS for {ticker}: {e}")
-        return 0.0
+    return calculate_relative_strength_aligned(ticker, benchmark_ticker=benchmark_ticker, days=days, force_refresh=True)
 
 
 def find_support_resistance(df: pd.DataFrame, lookback: int = 20) -> tuple[float, float]:
@@ -135,17 +115,9 @@ def find_support_resistance(df: pd.DataFrame, lookback: int = 20) -> tuple[float
     if df.empty or len(df) < lookback:
         return (0.0, 0.0)
 
-    recent_df = df.tail(lookback)
-
-    # Find swing lows (support) and swing highs (resistance)
-    highs = recent_df['High'].values
-    lows = recent_df['Low'].values
-
-    # Simple approach: use recent high as resistance, recent low as support
-    resistance = float(recent_df['High'].max())
-    support = float(recent_df['Low'].min())
-
-    return (round(support, 2), round(resistance, 2))
+    supports, resistances = find_support_resistance_levels(df, lookback=lookback)
+    current_price = float(df["Close"].iloc[-1])
+    return nearest_support_resistance(current_price, supports, resistances)
 
 
 def detect_consolidation(df: pd.DataFrame, days: int = 10, threshold_pct: float = 5.0) -> bool:
@@ -168,7 +140,7 @@ def detect_consolidation(df: pd.DataFrame, days: int = 10, threshold_pct: float 
     return range_pct < threshold_pct
 
 
-def detect_breakout_candidate(df: pd.DataFrame, current_price: float, resistance: float) -> bool:
+def detect_breakout_candidate(df: pd.DataFrame, current_price: float, resistance: float, volume_ratio: float) -> bool:
     """
     Detect if stock is a breakout candidate.
 
@@ -181,8 +153,8 @@ def detect_breakout_candidate(df: pd.DataFrame, current_price: float, resistance
 
     distance_to_resistance = ((resistance - current_price) / current_price) * 100
 
-    # Within 3% of resistance
-    return 0 < distance_to_resistance < 3
+    # Within 2% of resistance with relative volume confirmation
+    return 0 < distance_to_resistance < 2 and volume_ratio >= 1.2
 
 
 def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
@@ -233,12 +205,7 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
             month_change = 0.0
 
         # Volume ratio (compare recent week vs 4-week average)
-        if 'Volume' in df.columns:
-            current_week_vol = float(df['Volume'].tail(5).mean())
-            avg_vol = float(df['Volume'].tail(20).mean())
-            volume_ratio = current_week_vol / avg_vol if avg_vol > 0 else 1.0
-        else:
-            volume_ratio = 1.0
+        volume_ratio = calculate_relative_volume(df, recent_period=5, base_period=20)
 
         # Technical analysis - pass the DataFrame we already have
         tech = get_technical_analysis(df, ticker)
@@ -255,7 +222,7 @@ def analyze_stock_weekly(ticker: str) -> Optional[StockWeeklyMetrics]:
 
         # Consolidation detection (over 2 weeks)
         consolidating = detect_consolidation(df, days=10, threshold_pct=8.0)
-        breakout_candidate = detect_breakout_candidate(df, current_price, resistance)
+        breakout_candidate = detect_breakout_candidate(df, current_price, resistance, volume_ratio)
 
         # Relative strength vs NIFTY over 4 weeks
         rs = calculate_relative_strength(ticker, days=20)

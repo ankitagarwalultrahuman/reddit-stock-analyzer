@@ -48,10 +48,13 @@ def _run_swing_scan(task_id: str, req: SwingScanRequest):
 
         # Build summary
         by_type = {}
+        by_regime = {}
         for r in results:
             for s in r.setups:
                 st = s.setup_type.value if hasattr(s.setup_type, "value") else str(s.setup_type)
                 by_type[st] = by_type.get(st, 0) + 1
+                regime = getattr(s, "regime", "unknown")
+                by_regime[regime] = by_regime.get(regime, 0) + 1
 
         bias_counts = {}
         for r in results:
@@ -66,7 +69,12 @@ def _run_swing_scan(task_id: str, req: SwingScanRequest):
                 "setups_found": sum(len(r.setups) for r in results),
                 "avg_score": round(sum(r.total_score for r in results) / len(results), 1) if results else 0,
                 "by_type": by_type,
+                "by_regime": by_regime,
                 "bias_distribution": bias_counts,
+                "liquidity_distribution": {
+                    tier: sum(1 for r in results if r.liquidity_tier == tier)
+                    for tier in ["institutional", "liquid", "tradable", "illiquid", "unknown"]
+                },
             },
         })
     except Exception as e:

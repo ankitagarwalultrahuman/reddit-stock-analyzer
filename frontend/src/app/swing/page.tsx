@@ -35,6 +35,11 @@ const allResultColumns: Column<ScreenerResult>[] = [
     </Badge>
   )},
   { key: "volume_signal", label: "Volume", render: (r) => r.volume_signal },
+  { key: "liquidity_tier", label: "Liquidity", render: (r) => (
+    <Badge variant={r.liquidity_tier === "illiquid" ? "bearish" : r.liquidity_tier === "tradable" ? "neutral" : "bullish"}>
+      {r.liquidity_tier}
+    </Badge>
+  )},
   { key: "total_score", label: "Score", sortable: true, align: "right", render: (r) => (
     <span className="font-semibold">{r.total_score}</span>
   )},
@@ -146,6 +151,16 @@ export default function SwingPage() {
                   </div>
                 </CardContent>
               </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-sm text-muted-foreground">Regimes</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {Object.entries(result.summary.by_regime ?? {}).map(([regime, count]) => (
+                      <Badge key={regime} variant="secondary" className="text-xs">{regime}: {count as number}</Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -196,6 +211,9 @@ export default function SwingPage() {
                         <Badge variant={s.setup_type.includes("Breakdown") ? "bearish" : "bullish"} className="w-fit text-xs">
                           {s.setup_type}
                         </Badge>
+                        <Badge variant="secondary" className="w-fit text-xs">
+                          {s.regime}
+                        </Badge>
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div className="grid grid-cols-2 gap-2 text-sm">
@@ -233,6 +251,13 @@ export default function SwingPage() {
                           </Badge>
                         </div>
 
+                        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          <div>Holding Window: {s.holding_window}</div>
+                          <div>Stop Distance: {s.stop_distance_pct?.toFixed(1)}%</div>
+                          <div>Max Position: {s.capital_allocation_pct?.toFixed(1)}%</div>
+                          <div>RS vs NIFTY: {s.relative_strength?.toFixed(2)}%</div>
+                        </div>
+
                         {s.signals && s.signals.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {s.signals.slice(0, 4).map((sig, i) => (
@@ -263,10 +288,13 @@ export default function SwingPage() {
                     <div><span className="text-muted-foreground">Week Change:</span> <span className={row.week_change >= 0 ? "text-bullish" : "text-bearish"}>{formatPercent(row.week_change)}</span></div>
                     <div><span className="text-muted-foreground">Support:</span> {formatPrice(row.support)}</div>
                     <div><span className="text-muted-foreground">Resistance:</span> {formatPrice(row.resistance)}</div>
-                    <div><span className="text-muted-foreground">Tech Score:</span> {row.technical_score}</div>
-                    <div><span className="text-muted-foreground">52W High:</span> {formatPrice(row.week_52_high)}</div>
-                    <div><span className="text-muted-foreground">52W Low:</span> {formatPrice(row.week_52_low)}</div>
-                    <div><span className="text-muted-foreground">From 52W High:</span> {row.pct_from_52w_high?.toFixed(1)}%</div>
+                  <div><span className="text-muted-foreground">Tech Score:</span> {row.technical_score}</div>
+                  <div><span className="text-muted-foreground">Primary Setup:</span> {row.primary_setup || "None"}</div>
+                  <div><span className="text-muted-foreground">Liquidity:</span> {row.liquidity_tier}</div>
+                  <div><span className="text-muted-foreground">ADV:</span> {row.avg_traded_value_cr ? `₹${row.avg_traded_value_cr} Cr` : "N/A"}</div>
+                  <div><span className="text-muted-foreground">52W High:</span> {formatPrice(row.week_52_high)}</div>
+                  <div><span className="text-muted-foreground">52W Low:</span> {formatPrice(row.week_52_low)}</div>
+                  <div><span className="text-muted-foreground">From 52W High:</span> {row.pct_from_52w_high?.toFixed(1)}%</div>
                     <div><span className="text-muted-foreground">Near 52W High:</span> {row.near_52w_high ? "Yes" : "No"}</div>
                   </div>
                 )}
@@ -288,7 +316,9 @@ interface SwingResult {
     setups_found: number;
     avg_score: number;
     by_type: Record<string, number>;
+    by_regime?: Record<string, number>;
     bias_distribution: Record<string, number>;
+    liquidity_distribution?: Record<string, number>;
   };
 }
 
@@ -296,6 +326,7 @@ interface SwingSetup {
   ticker: string;
   sector: string;
   setup_type: string;
+  regime: string;
   current_price: number;
   entry_zone: [number, number];
   stop_loss: number;
@@ -305,6 +336,9 @@ interface SwingSetup {
   confidence_score: number;
   signals: string[];
   relative_strength: number;
+  holding_window: string;
+  stop_distance_pct: number;
+  capital_allocation_pct: number;
 }
 
 interface ScreenerResult {
@@ -323,6 +357,9 @@ interface ScreenerResult {
   resistance: number;
   total_score: number;
   setup_count: number;
+  primary_setup?: string;
+  avg_traded_value_cr?: number;
+  liquidity_tier: string;
   week_52_high: number;
   week_52_low: number;
   pct_from_52w_high: number;
